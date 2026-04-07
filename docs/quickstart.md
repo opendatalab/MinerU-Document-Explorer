@@ -11,6 +11,52 @@ git clone https://github.com/opendatalab/MinerU-Document-Explorer.git
 cd MinerU-Document-Explorer && bun install && bun link
 ```
 
+## Document Processing Setup
+
+PDF, DOCX, and PPTX support requires Python 3.10+ and a few packages:
+
+```sh
+# Check Python version (needs >= 3.10)
+python3 --version
+
+# Install required packages
+pip install pymupdf python-docx python-pptx
+
+# Verify everything works
+python3 -c "import pymupdf; import docx; import pptx; print('OK')"
+```
+
+### MinerU Cloud (optional — high-quality PDF)
+
+For scanned documents or complex PDF layouts, MinerU Cloud provides
+significantly better extraction quality:
+
+```sh
+pip install mineru-open-sdk
+export MINERU_API_KEY="your-key-here"   # get from https://mineru.net
+```
+
+When `MINERU_API_KEY` is set, MinerU Cloud is automatically used as the
+primary PDF provider with PyMuPDF as fallback.
+
+For more advanced configuration (custom providers, OpenAI PageIndex, local
+VLM models), create `~/.config/qmd/doc-reading.json`:
+
+```json
+{
+  "docReading": {
+    "providers": {
+      "fullText": { "pdf": ["mineru_cloud", "pymupdf"] }
+    },
+    "credentials": {
+      "mineru": { "api_key": "your-api-key" }
+    }
+  }
+}
+```
+
+## Index & Search
+
 ```sh
 # 1. Index a folder of documents
 qmd collection add ~/notes --name notes

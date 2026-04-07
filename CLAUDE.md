@@ -266,6 +266,106 @@ src/
     └── formatter.ts      Output formatting utilities
 ```
 
+## Document Processing Setup (MinerU 服务配置)
+
+PDF/DOCX/PPTX processing uses Python subprocess integration. When users want to
+work with binary document formats, guide them through the setup interactively.
+
+### Dependency Tiers
+
+**Tier 1 — Basic (required for PDF/DOCX/PPTX):**
+
+```sh
+# Check Python
+python3 --version  # needs >= 3.10
+
+# Install base packages
+pip install pymupdf python-docx python-pptx
+
+# Verify
+python3 -c "import pymupdf; import docx; import pptx; print('OK')"
+```
+
+**Tier 2 — MinerU Cloud PDF (high-quality, handles scanned docs):**
+
+Requires a MinerU API key from https://mineru.net. Dramatically improves PDF
+quality over PyMuPDF for complex layouts, scanned documents, and tables.
+
+```sh
+pip install mineru-open-sdk
+
+# Set API key (pick one):
+export MINERU_API_KEY="your-key-here"
+# or add to ~/.config/qmd/doc-reading.json (see below)
+```
+
+**Tier 3 — MinerU Local VLM PDF (offline high-quality):**
+
+```sh
+pip install pymupdf "mineru-vl-utils[transformers]" transformers pillow
+# Also requires downloading the model (~1.2GB):
+# Set model_path in ~/.config/qmd/doc-reading.json
+```
+
+**Tier 4 — GPT PageIndex (LLM-inferred TOC for PDFs):**
+
+```sh
+pip install tiktoken openai pymupdf pyyaml
+
+# Set API key:
+export OPENAI_API_KEY="your-key-here"
+# Optional: export OPENAI_BASE_URL="https://your-compatible-api/v1"
+```
+
+### Configuration File
+
+Config path: `~/.config/qmd/doc-reading.json` (or project-level `qmd.config.json`).
+
+```jsonc
+{
+  "docReading": {
+    "providers": {
+      "fullText": { "pdf": ["mineru_cloud", "pymupdf"] },
+      "toc":      { "pdf": ["native_bookmarks", "gpt_pageindex"] },
+      "elements": { "pdf": [], "docx": ["python_docx_local"], "pptx": ["python_pptx_local"] }
+    },
+    "credentials": {
+      "mineru": { "api_key": "...", "api_url": "https://mineru.net/api/v4" },
+      "openai": { "api_key": "...", "base_url": "https://api.openai.com/v1" }
+    },
+    "local": {
+      "model_path": "~/.cache/mineru/MinerU2.5-2509-1.2B",
+      "dpi": 150
+    }
+  }
+}
+```
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `MINERU_API_KEY` | MinerU cloud PDF extraction (auto-enables `mineru_cloud` provider) |
+| `OPENAI_API_KEY` | GPT PageIndex TOC generation |
+| `OPENAI_BASE_URL` | Custom OpenAI-compatible endpoint |
+| `PAGEINDEX_API_KEY` | PageIndex script (used by `extract_pdf_pageindex.py`) |
+
+### Agent Guidance for Interactive Setup
+
+When a user provides a project link or asks to set up MinerU Document Explorer,
+guide them through these steps interactively:
+
+1. **Check `qmd` is installed** — `which qmd` or `qmd status`
+2. **Check Python availability** — `python3 --version`
+3. **Check base packages** — `python3 -c "import pymupdf; import docx; import pptx"`
+4. **Install missing packages** — show the exact `pip install` command
+5. **Ask about advanced PDF needs** — if they have scanned PDFs or complex layouts,
+   suggest MinerU Cloud (Tier 2); help them configure API key
+6. **Help create config file** — if they need Tier 2/3/4, write `~/.config/qmd/doc-reading.json`
+
+Do NOT run `pip install` or write config files automatically — show the commands
+and let the user confirm.
+
 ## Important: Do NOT run automatically
 
 - Never run `qmd collection add`, `qmd embed`, or `qmd update` automatically

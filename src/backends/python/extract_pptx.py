@@ -26,8 +26,12 @@ def main():
             if hasattr(shape, "text_frame"):
                 t = shape.text_frame.text.strip()
                 if t:
-                    # Check if title placeholder
-                    if hasattr(shape, "placeholder_format") and shape.placeholder_format and shape.placeholder_format.idx == 0:
+                    is_title = False
+                    try:
+                        is_title = shape.is_placeholder and shape.placeholder_format.idx == 0
+                    except (ValueError, AttributeError):
+                        pass
+                    if is_title:
                         title = t
                     else:
                         text_parts.append(t)

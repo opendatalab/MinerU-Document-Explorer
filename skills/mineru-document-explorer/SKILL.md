@@ -107,6 +107,190 @@ navigation tools (`doc_toc`, `doc_grep`, `doc_query`) and the reading tool
 
 ---
 
+## Playbook 0: First-Run Setup & Configuration
+
+Use when a user first connects MinerU Document Explorer, gives you the project
+link, or when PDF/DOCX/PPTX operations fail. Walk the user through setup
+**interactively** — check each prerequisite and guide them step by step.
+
+### Step 1 — Check qmd is installed
+
+```bash
+which qmd && qmd status
+```
+
+If not installed:
+
+```bash
+# Option A: npm (recommended)
+npm install -g mineru-document-explorer
+
+# Option B: from source
+git clone https://github.com/opendatalab/MinerU-Document-Explorer.git
+cd MinerU-Document-Explorer && bun install && bun link
+```
+
+### Step 2 — Check Python for binary document support
+
+PDF, DOCX, and PPTX processing requires Python 3.10+:
+
+```bash
+python3 --version
+```
+
+If Python is missing, guide the user to install it for their platform:
+- **macOS**: `brew install python@3.12`
+- **Ubuntu/Debian**: `sudo apt install python3 python3-pip`
+- **Windows**: Download from https://python.org
+
+### Step 3 — Check and install Python packages
+
+Three packages are required for binary document processing:
+
+```bash
+python3 -c "import pymupdf; import docx; import pptx; print('All dependencies OK')"
+```
+
+If any import fails, install the missing packages:
+
+```bash
+pip install pymupdf python-docx python-pptx
+```
+
+| Package | Format | What it does |
+|---------|--------|-------------|
+| `pymupdf` | PDF | Text extraction, bookmarks, page-level reading |
+| `python-docx` | DOCX | Section extraction, table extraction |
+| `python-pptx` | PPTX | Slide text, table extraction |
+
+### Step 4 — Ask about advanced PDF processing (optional)
+
+Ask the user: **"Do you need high-quality PDF extraction for scanned documents
+or complex layouts? MinerU Cloud provides significantly better results than
+basic PyMuPDF."**
+
+If yes, guide them to set up **MinerU Cloud**:
+
+1. Get an API key from https://mineru.net
+2. Configure it (pick one method):
+
+```bash
+# Method A: Environment variable
+export MINERU_API_KEY="your-key-here"
+
+# Method B: Config file (~/.config/qmd/doc-reading.json)
+mkdir -p ~/.config/qmd
+cat > ~/.config/qmd/doc-reading.json << 'EOF'
+{
+  "docReading": {
+    "providers": {
+      "fullText": { "pdf": ["mineru_cloud", "pymupdf"] }
+    },
+    "credentials": {
+      "mineru": { "api_key": "YOUR_API_KEY_HERE" }
+    }
+  }
+}
+EOF
+```
+
+When `MINERU_API_KEY` is set, MinerU Cloud is automatically used as the primary
+PDF provider with PyMuPDF as fallback — no config file needed.
+
+Additional Python package for MinerU Cloud:
+
+```bash
+pip install mineru-open-sdk
+```
+
+### Step 5 — Index documents and verify
+
+```bash
+# Index a folder (adjust path to user's documents)
+qmd collection add ~/Documents --name mydocs --mask '**/*.{md,pdf,docx,pptx}'
+
+# Verify indexing worked
+qmd status
+
+# Test search (instant, no model downloads)
+qmd search "test"
+```
+
+### Step 6 — Configure MCP server (for AI agent integration)
+
+Ask the user which AI client they use and provide the matching config:
+
+**Claude Code** (`~/.claude/settings.json`):
+```json
+{ "mcpServers": { "qmd": { "command": "qmd", "args": ["mcp"] } } }
+```
+
+**Cursor** (`.cursor/mcp.json`) — HTTP mode recommended:
+```bash
+qmd mcp --http --daemon   # start the server first
+```
+```json
+{ "mcpServers": { "qmd": { "url": "http://localhost:8181/mcp" } } }
+```
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+```json
+{ "mcpServers": { "qmd": { "command": "qmd", "args": ["mcp"] } } }
+```
+
+### Configuration Reference
+
+**Config file locations** (later overrides earlier):
+1. `~/.config/qmd/doc-reading.json` — global settings
+2. `./qmd.config.json` — project-level overrides
+3. Environment variables — highest priority
+
+**Full config example** (`~/.config/qmd/doc-reading.json`):
+
+```json
+{
+  "docReading": {
+    "providers": {
+      "fullText": { "pdf": ["mineru_cloud", "pymupdf"] },
+      "toc":      { "pdf": ["native_bookmarks"] },
+      "elements": { "docx": ["python_docx_local"], "pptx": ["python_pptx_local"] }
+    },
+    "credentials": {
+      "mineru": {
+        "api_key": "your-mineru-api-key",
+        "api_url": "https://mineru.net/api/v4"
+      },
+      "openai": {
+        "api_key": "your-openai-api-key",
+        "base_url": "https://api.openai.com/v1"
+      }
+    }
+  }
+}
+```
+
+**Environment variables:**
+
+| Variable | Purpose |
+|----------|---------|
+| `MINERU_API_KEY` | MinerU Cloud PDF (auto-enables `mineru_cloud` provider) |
+| `OPENAI_API_KEY` | GPT PageIndex (LLM-inferred TOC for PDFs) |
+| `OPENAI_BASE_URL` | Custom OpenAI-compatible endpoint |
+
+**Provider options:**
+
+| Capability | Provider | Requires |
+|-----------|----------|----------|
+| PDF full text | `pymupdf` (default) | `pip install pymupdf` |
+| PDF full text | `mineru_cloud` | `pip install mineru-open-sdk` + API key |
+| PDF full text | `mineru_local` | `pip install mineru-vl-utils[transformers]` + model |
+| PDF TOC | `native_bookmarks` (default) | `pip install pymupdf` |
+| PDF TOC | `gpt_pageindex` | `pip install tiktoken openai pyyaml` + API key |
+| DOCX tables | `python_docx_local` (default) | `pip install python-docx` |
+| PPTX tables | `python_pptx_local` (default) | `pip install python-pptx` |
+
+---
+
 ## Playbook 1: Search & Answer a Question
 
 Use when the user asks a question and you need to find information.
@@ -493,7 +677,7 @@ START
 | `get` returns too much text | Document is large | Use `doc_toc` → `doc_read` for targeted sections |
 | `doc_read` returns empty | No addresses provided or wrong format | Get addresses from `doc_toc`, `doc_grep`, or `doc_query` first |
 | Slow first query (~5-15s) | LLM models loading | Normal for MCP startup; subsequent queries are fast. CLI always reloads. |
-| PDF/DOCX/PPTX not working | Missing Python dependencies | User needs: `pip install pymupdf python-docx python-pptx` |
+| PDF/DOCX/PPTX not working | Missing Python dependencies | Follow Playbook 0 to check and install: `python3 -c "import pymupdf; import docx; import pptx"`, then `pip install pymupdf python-docx python-pptx` |
 | Wiki page has broken links | Target page doesn't exist | Create the missing page with `doc_write`, or fix the `[[wikilink]]` |
 | Stale wiki pages | Source document updated after wiki page written | Run `wiki_lint` to detect; re-read source with `doc_read` and update |
 | `multi_get` returns no files | Pattern doesn't match any indexed files | Check exact collection names via `status`; try broader glob |
@@ -519,11 +703,19 @@ qmd mcp --http --daemon                   # MCP server (HTTP, background)
 
 ## Setup
 
-> For a guided walkthrough of the full first-run flow, see the [Quick Start guide](https://github.com/opendatalab/MinerU-Document-Explorer/blob/main/README.md#-quick-start).
+> **For first-time users, use Playbook 0 above** — it walks through the full
+> setup interactively, including dependency checks and configuration.
 
 ```bash
 # Install
 npm install -g mineru-document-explorer
+
+# Python dependencies for PDF/DOCX/PPTX (required for binary formats)
+pip install pymupdf python-docx python-pptx
+
+# Optional: MinerU Cloud for high-quality PDF (scanned docs, complex layouts)
+pip install mineru-open-sdk
+export MINERU_API_KEY="your-key"  # get from https://mineru.net
 
 # Index documents
 qmd collection add ~/notes --name notes
@@ -535,9 +727,6 @@ qmd search "test query"  # instant, no model download
 
 # Optional: enable semantic search (downloads ~2GB models on first run)
 qmd embed
-
-# Optional: Python dependencies for PDF/DOCX/PPTX
-pip install pymupdf python-docx python-pptx
 ```
 
 ## MCP Configuration

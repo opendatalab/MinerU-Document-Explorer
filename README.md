@@ -194,6 +194,45 @@ claude skill add ./skills/mineru-document-explorer/SKILL.md
 | **Python** >=3.10 _(optional)_ | For PDF (`pymupdf`), DOCX (`python-docx`), PPTX (`python-pptx`) |
 | **macOS** | `brew install sqlite` for extension support |
 
+### 📄 Document Processing Setup
+
+PDF, DOCX, and PPTX support requires Python 3.10+ with a few packages:
+
+```sh
+# Install Python packages for binary document processing
+pip install pymupdf python-docx python-pptx
+
+# Verify
+python3 -c "import pymupdf; import docx; import pptx; print('OK')"
+```
+
+<details>
+<summary><b>MinerU Cloud</b> — high-quality PDF extraction for scanned documents and complex layouts (optional)</summary>
+
+```sh
+pip install mineru-open-sdk
+export MINERU_API_KEY="your-key"  # get from https://mineru.net
+```
+
+When `MINERU_API_KEY` is set, MinerU Cloud is automatically used as the primary PDF provider with PyMuPDF as fallback.
+
+For advanced configuration (custom providers, local VLM models, GPT PageIndex), create `~/.config/qmd/doc-reading.json`:
+
+```json
+{
+  "docReading": {
+    "providers": {
+      "fullText": { "pdf": ["mineru_cloud", "pymupdf"] }
+    },
+    "credentials": {
+      "mineru": { "api_key": "your-api-key" }
+    }
+  }
+}
+```
+
+</details>
+
 ### 🤖 LLM Models (auto-downloaded on first use)
 
 | Model | Purpose | Size |
