@@ -265,10 +265,10 @@ MinerU Document Explorer 构建在以下项目之上：
 
 ## 📝 更新日志
 
-### v2 — 2026-04-07（当前版本）
+### v1 — 2026-04-07（当前版本）
 
 从 OpenClaw Agent Skill 重构为完整的 Agent 原生知识引擎：npm 包（`npm install -g mineru-document-explorer`）、`qmd` CLI、包含 15 个工具的 MCP 服务器（三组：检索 / 精读 / 摄取）、多格式支持（MD、PDF、DOCX、PPTX）、混合搜索（BM25 + 向量 + LLM 重排序），以及 LLM Wiki 知识库模式。
 
-### v1 — 2026-03-30（上一版本）
+### v0 — 2026-03-30（上一版本）
 
-OpenClaw 原生 Agent Skill（`doc-search` CLI）。四大能力：逻辑检索、语义检索、关键词检索、证据提取。见[v1版仓库](https://github.com/opendatalab/MinerU-Document-Explorer/tree/v1).
+OpenClaw 原生 Agent Skill（`doc-search` CLI）。四大能力：逻辑检索、语义检索、关键词检索、证据提取。见[v0版仓库](https://github.com/opendatalab/MinerU-Document-Explorer/tree/v0).
