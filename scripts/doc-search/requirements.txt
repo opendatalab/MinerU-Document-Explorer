@@ -1,0 +1,23 @@
+# doc_search requirements
+# Install: pip install -r requirements.txt
+
+# ── Core (always required) ──
+pyyaml>=6.0
+Pillow>=9.0
+pymupdf>=1.23
+requests>=2.28
+
+# ── OCR (MinerU server client, needed for keyword search & OCR text) ──
+mineru-open-sdk>=0.1.0
+
+# ── Extraction (AgenticOCR element extraction) ──
+openai>=1.0
+httpx>=0.24
+
+# ── Server (FastAPI HTTP server) ──
+fastapi>=0.104
+uvicorn>=0.24
+python-multipart>=0.0.6
+
+# ── PageIndex (tree-based document outline) ──
+tiktoken>=0.5

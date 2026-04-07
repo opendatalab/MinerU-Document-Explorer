@@ -1,0 +1,84 @@
+# ============================================================
+# mineru-document-explorer configuration
+# ============================================================
+# Two deployment modes:
+#
+#   local   — all services run locally (open-source self-hosted)
+#   client  — delegates to a remote server via server_url;
+#             locally configured backends (e.g. PageIndex with
+#             your own GPT API key) run on the client side
+#
+# "hybrid" is an alias for "client" — it auto-enables local
+# backends alongside the remote server.
+#
+# Set deployment_mode explicitly, or leave empty for auto-detect:
+#   empty + server_url set   → "client" (backward compatible)
+#   empty + server_url empty → "local"
+# ============================================================
+
+# Deployment mode: "local", "hybrid", "client", or "" (auto-detect)
+deployment_mode: "client"
+
+client_pdf_dpi: 200       # client-side rendering DPI (for display)
+server_pdf_dpi: 150       # server-side rendering DPI (for models only)
+
+# ----------------------------------------------------------
+# PageIndex tree builder (always runs locally)
+# ----------------------------------------------------------
+pageindex_model: "" # gpt-4.1-mini or gpt-4o-2024-11-20
+pageindex_add_summary: "no"
+pageindex_api_key: ""                     # your OpenAI-compatible API key
+pageindex_base_url: ""                    # e.g. "https://api.openai.com/v1"
+
+# ----------------------------------------------------------
+# MinerU OCR server (local)
+# ----------------------------------------------------------
+# Uncomment and set for local deployment:
+# mineru_server_url: "http://localhost:8000/"
+# mineru_model_path: "/path/to/MinerU-model/"
+mineru_server_url: ""
+mineru_model_path: ""
+
+# ----------------------------------------------------------
+# Extractor LLM — AgenticOCR element extraction (local)
+# ----------------------------------------------------------
+# Uncomment and set for local deployment:
+# extractor_model_name: "your-extractor-model-name"
+# extractor_base_url: "http://localhost:8001/v1"
+# extractor_api_key: "sk-placeholder"
+extractor_model_name: ""
+extractor_base_url: ""
+extractor_api_key: ""
+extractor_max_image_size: 2048
+
+# ----------------------------------------------------------
+# Reranker API — Qwen3VL visual reranker (local)
+# ----------------------------------------------------------
+# Uncomment and set for local deployment:
+# reranker_api_base: "http://localhost:8002"
+reranker_api_base: ""
+
+# ----------------------------------------------------------
+# Embedding service — Qwen3VL embedding for FAISS recall (local)
+# ----------------------------------------------------------
+# Uncomment and set for local deployment:
+# embedding_api_base: "http://localhost:8003"
+embedding_api_base: ""
+embedding_batch_size: 8
+embedding_recall_k: 20
+
+# ----------------------------------------------------------
+# Server settings (when running as a server)
+# ----------------------------------------------------------
+server_host: "0.0.0.0"
+server_port: 8080
+server_api_key: "sk-123456"          # Bearer token for server auth
+server_cache_root: "mineru_explorer_cache"
+
+# ----------------------------------------------------------
+# Client / hybrid settings
+# ----------------------------------------------------------
+# Default public server is pre-configured. Override if you have your own deployment.
+server_url: "https://staging.mineru.org.cn/rag/"
+client_api_key: ""                   # leave empty for the default public server
+client_cache_root: "mineru_explorer_client_cache"

@@ -1,0 +1,49 @@
+[project]
+name = "mineru-document-explorer"
+version = "0.1.0"
+description = "Document smart reading toolkit with OCR, semantic search, and evidence extraction."
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "Pillow>=9.0",
+    "pymupdf>=1.23",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+ocr = ["mineru-open-sdk>=0.1.0"]
+extraction = ["openai>=1.0", "httpx>=0.24", "mineru-open-sdk>=0.1.0"]
+embedding = ["faiss-cpu>=1.7", "numpy>=1.20"]
+pageindex = ["openai>=1.0", "tiktoken>=0.5"]
+server = ["fastapi>=0.104", "uvicorn>=0.24", "python-multipart>=0.0.6"]
+all = [
+    "mineru-open-sdk>=0.1.0",
+    "openai>=1.0",
+    "httpx>=0.24",
+    "tiktoken>=0.5",
+    "faiss-cpu>=1.7",
+    "numpy>=1.20",
+    "fastapi>=0.104",
+    "uvicorn>=0.24",
+    "python-multipart>=0.0.6",
+]
+
+[project.scripts]
+doc-search = "doc_search.__main__:main"
+
+[tool.setuptools]
+packages = ["doc_search", "doc_search.core", "doc_search.backends", "doc_search.backends.pageindex"]
+
+[tool.setuptools.package-dir]
+"doc_search" = "."
+"doc_search.core" = "core"
+"doc_search.backends" = "backends"
+"doc_search.backends.pageindex" = "backends/pageindex"
+
+[tool.setuptools.package-data]
+"doc_search" = ["config.yaml"]
+"doc_search.backends.pageindex" = ["config.yaml"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
