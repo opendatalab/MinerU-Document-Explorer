@@ -36,3 +36,5 @@ __pycache__/
 demo/papers/
 demo/wiki/
 demo/survey.md
+# Test data
+test_raw/
