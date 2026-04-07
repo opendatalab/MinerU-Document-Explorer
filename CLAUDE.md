@@ -273,7 +273,10 @@ work with binary document formats, guide them through the setup interactively.
 
 ### Dependency Tiers
 
-**Tier 1 — Basic (required for PDF/DOCX/PPTX):**
+**Tier 1 — Basic (required):**
+
+Python 3.10+ is a **required** dependency. The document processing pipeline
+(PDF, DOCX, PPTX) and several core features depend on Python subprocess calls.
 
 ```sh
 # Check Python

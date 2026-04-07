@@ -18,6 +18,7 @@
   <a href="README-zh.md">中文文档</a> ·
   <a href="docs/mcp.md">MCP Setup</a> ·
   <a href="docs/cli.md">CLI Reference</a> ·
+  <a href="demo/">Demo</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -36,6 +37,15 @@ MinerU Document Explorer equips your agent with three tool suites — **Retrieve
 - **📝 Ingest** — Build and maintain a LLM wiki from raw documents, following the [Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern
 
 Developed by the [MinerU](https://github.com/opendatalab/MinerU) team, building on [QMD](https://github.com/tobi/qmd) and [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
+
+### 💡 What can you do with it?
+
+- **Research assistant** — Point it at a folder of PDFs and ask your AI agent to survey the literature, compare methods, or find specific results across papers
+- **Project knowledge base** — Index your codebase, docs, and design specs; let the agent answer questions about architecture, find relevant code, or trace requirements
+- **Study companion** — Upload textbooks or lecture notes; use `doc_toc` + `doc_read` to navigate, `doc_grep` to search, and build a wiki of key concepts
+- **Enterprise document search** — Index contracts, reports, or manuals and search them with natural language queries enhanced by LLM reranking
+
+> **See it in action**: The [demo/](demo/) folder contains a complete end-to-end example — an AI agent automatically reads ~10 arXiv papers on RAG, builds an interlinked wiki knowledge base, and writes a research survey. See the [Demo Guide](demo/README.md) for step-by-step instructions.
 
 ## 🚀 Quick Start
 
@@ -191,15 +201,18 @@ claude skill add ./skills/mineru-document-explorer/SKILL.md
 | Requirement | Notes |
 |-------------|-------|
 | **Node.js** >= 22 or **Bun** | Runtime |
-| **Python** >=3.10 _(optional)_ | For PDF (`pymupdf`), DOCX (`python-docx`), PPTX (`python-pptx`) |
+| **Python** >= 3.10 | Document processing (`pymupdf`, `python-docx`, `python-pptx`) |
 | **macOS** | `brew install sqlite` for extension support |
 
 ### 📄 Document Processing Setup
 
-PDF, DOCX, and PPTX support requires Python 3.10+ with a few packages:
+Python 3.10+ is required for document processing (PDF, DOCX, PPTX):
 
 ```sh
-# Install Python packages for binary document processing
+# Check Python version
+python3 --version  # needs >= 3.10
+
+# Install required Python packages
 pip install pymupdf python-docx python-pptx
 
 # Verify
@@ -247,6 +260,7 @@ For advanced configuration (custom providers, local VLM models, GPT PageIndex), 
 
 | | |
 |:---|:---|
+| 🎯 [Demo Guide](demo/README.md) | End-to-end example: agent-driven RAG research survey |
 | 📖 [CLI Reference](docs/cli.md) | All commands, options, output formats |
 | 🔌 [MCP Server](docs/mcp.md) | Setup, 15 tools, HTTP transport |
 | 📦 [SDK / Library](docs/sdk.md) | TypeScript API, types, examples |

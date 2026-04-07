@@ -2,6 +2,23 @@
 
 > **Agent-Assisted Setup**: If you're using an AI agent (Claude Code, Cursor, etc.), simply ask it to help you deploy MinerU Document Explorer and install skills — the agent can handle the entire setup process for you, including MCP configuration.
 
+## Prerequisites
+
+Python 3.10+ is **required** for document processing:
+
+```sh
+# Check Python version (needs >= 3.10)
+python3 --version
+
+# Install required Python packages
+pip install pymupdf python-docx python-pptx
+
+# Verify
+python3 -c "import pymupdf; import docx; import pptx; print('OK')"
+```
+
+## Install
+
 ```sh
 # Option A: npm (recommended)
 npm install -g mineru-document-explorer
@@ -9,21 +26,6 @@ npm install -g mineru-document-explorer
 # Option B: from source
 git clone https://github.com/opendatalab/MinerU-Document-Explorer.git
 cd MinerU-Document-Explorer && bun install && bun link
-```
-
-## Document Processing Setup
-
-PDF, DOCX, and PPTX support requires Python 3.10+ and a few packages:
-
-```sh
-# Check Python version (needs >= 3.10)
-python3 --version
-
-# Install required packages
-pip install pymupdf python-docx python-pptx
-
-# Verify everything works
-python3 -c "import pymupdf; import docx; import pptx; print('OK')"
 ```
 
 ### MinerU Cloud (optional — high-quality PDF)

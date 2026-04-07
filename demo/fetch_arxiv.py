@@ -3,7 +3,7 @@
 Fetch RAG papers from arXiv (2026+) and download PDFs.
 
 Usage:
-    python3 demo/fetch_arxiv.py [--max 100] [--output demo/papers]
+    python3 demo/fetch_arxiv.py [--max 10] [--output demo/papers]
 
 Requires: pip install feedparser
 """
@@ -111,7 +111,7 @@ def download_pdfs(papers: list[dict], output_dir: Path) -> int:
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch RAG papers from arXiv (2026+)")
-    parser.add_argument("--max", type=int, default=100, help="Maximum papers to fetch (default: 100)")
+    parser.add_argument("--max", type=int, default=10, help="Maximum papers to fetch (default: 10)")
     parser.add_argument("--output", type=str, default="demo/papers", help="Output directory for PDFs")
     parser.add_argument("--metadata-only", action="store_true", help="Only fetch metadata, skip PDF download")
     args = parser.parse_args()

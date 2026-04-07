@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Docs
+
+- **Python 3.10+ is now a required dependency** — updated README, README-zh,
+  quickstart, and CLAUDE.md to reflect this (previously marked as optional).
+- **Added "What can you do with it?" section to README** — concrete use cases
+  (research assistant, project knowledge base, study companion, enterprise search)
+  to help new users understand the project's value.
+- **Expanded demo guide** — `demo/README.md` now includes problem statement,
+  usage scenarios, all 15 MCP tools with example calls and parameter reference,
+  a complete end-to-end workflow walkthrough, customization instructions, and FAQ.
+- **Added demo links** to README navigation bar and documentation table.
+- **English demo README** — `demo/README.md` is now English; Chinese version
+  moved to `demo/README-zh.md`.
+- **Demo default reduced to 10 papers** — lowered from 100 to make the demo
+  quicker to run end-to-end.
+
 ## [1.0.5] - 2026-04-07
 
 ### Fixes

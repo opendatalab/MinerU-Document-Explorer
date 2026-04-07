@@ -16,13 +16,13 @@
 #   - Generate the survey via doc_write
 #
 # Usage:
-#   bash demo/setup.sh [--max 100] [--skip-download] [--skip-embed]
+#   bash demo/setup.sh [--max 10] [--skip-download] [--skip-embed]
 #   MINERU_API_KEY=... bash demo/setup.sh   # use MinerU cloud
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MAX_PAPERS=100
+MAX_PAPERS=10
 SKIP_DOWNLOAD=false
 SKIP_EMBED=false
 INDEX_NAME="demo"

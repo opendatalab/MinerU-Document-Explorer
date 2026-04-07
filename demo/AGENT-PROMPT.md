@@ -1,6 +1,6 @@
 # RAG Research Survey — Agent Prompt
 
-You have access to a MinerU Document Explorer index (named `demo`) containing ~100 recent
+You have access to a MinerU Document Explorer index (named `demo`) containing ~10 recent
 arXiv papers on Retrieval-Augmented Generation (RAG). The MCP server must be
 started with `--index demo` (e.g. `bun src/cli/qmd.ts --index demo mcp`).
 
@@ -126,7 +126,7 @@ As you process more papers, use `query` to find connections:
 
 ## Phase 3: Analysis & Survey
 
-After building the wiki (at least 20-30 paper pages + concept pages):
+After building the wiki (paper pages + concept pages for all indexed papers):
 
 1. Run `wiki_lint` to check for orphan pages and broken links. Fix any issues.
 2. Run `wiki_index` with `collection: "wiki"` and `write: true` to generate the index page.
