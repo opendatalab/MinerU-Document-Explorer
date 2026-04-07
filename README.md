@@ -232,4 +232,4 @@ Rebuilt from an OpenClaw agent skill into a full agent-native knowledge engine: 
 
 ### v1 — 2026-03-30 (Previous)
 
-OpenClaw-native agent skill (`doc-search` CLI). Four capabilities: Logic Retrieval, Semantic Retrieval, Keyword Retrieval, Evidence Extraction. See the [v1 repository](https://github.com/opendatalab/MinerU-Document-Explorer/tree/v1).
+OpenClaw-native agent skill (`doc-search` CLI). Four capabilities: Logic Retrieval, Semantic Retrieval, Keyword Retrieval, Evidence Extraction. 
