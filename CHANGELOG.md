@@ -2,12 +2,18 @@
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-04-07
+
 ### Fixes
 
 - **PPTX indexing crash on python-pptx >= 1.0** — `shape.placeholder_format`
   now raises `ValueError` for non-placeholder shapes instead of returning
   `None`. Use `shape.is_placeholder` guard with `try/except` fallback so PPTX
   files index correctly on all python-pptx versions.
+- **Build: stale Python scripts in dist/** — `npm run build` used `cp -r`
+  which nested scripts into `dist/backends/python/python/` instead of
+  replacing the old files. Added `rm -rf dist/backends/python` before copy
+  so rebuilds always pick up source changes.
 
 ### Docs
 

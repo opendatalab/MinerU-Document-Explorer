@@ -1,6 +1,6 @@
 {
   "name": "mineru-document-explorer",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MinerU Document Explorer — Agent-native knowledge engine: hybrid search and deep reading over markdown, PDF, DOCX, PPTX with BM25, vector search, and LLM reranking",
   "private": false,
   "type": "module",
@@ -25,7 +25,7 @@
   },
   "scripts": {
     "prepare": "[ -d .git ] && ./scripts/install-hooks.sh || true",
-    "build": "node scripts/sync-embedded-skills.js && tsc -p tsconfig.build.json && cp -r src/backends/python dist/backends/python && printf '#!/usr/bin/env node\n' | cat - dist/cli/qmd.js > dist/cli/qmd.tmp && mv dist/cli/qmd.tmp dist/cli/qmd.js && chmod +x dist/cli/qmd.js",
+    "build": "node scripts/sync-embedded-skills.js && tsc -p tsconfig.build.json && rm -rf dist/backends/python && cp -r src/backends/python dist/backends/python && printf '#!/usr/bin/env node\n' | cat - dist/cli/qmd.js > dist/cli/qmd.tmp && mv dist/cli/qmd.tmp dist/cli/qmd.js && chmod +x dist/cli/qmd.js",
     "test": "vitest run --reporter=verbose test/",
     "qmd": "tsx src/cli/qmd.ts",
     "update": "tsx src/cli/qmd.ts update",
