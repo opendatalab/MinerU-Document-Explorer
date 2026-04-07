@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-04-07
+
+### Fixes
+
+- **Build: stale Python scripts in dist/** — `npm run build` used `cp -r`
+  which nested scripts into `dist/backends/python/python/` when rebuilding,
+  leaving old buggy files in place. Added `rm -rf dist/backends/python`
+  before copy so the PPTX fix from v1.0.3 is correctly included.
+
 ## [1.0.3] - 2026-04-07
 
 ### Fixes
