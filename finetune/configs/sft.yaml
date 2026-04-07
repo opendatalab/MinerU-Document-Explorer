@@ -1,0 +1,47 @@
+# SFT Training Config for QMD Query Expansion
+# Target: Qwen3-1.7B with LoRA
+#
+# Usage: uv run train.py sft --config configs/sft.yaml
+
+model:
+  base: "Qwen/Qwen3-1.7B"
+  output: "outputs/sft"  # Local training output (push to HF manually after eval)
+
+dataset:
+  # Local: run `uv run dataset/prepare_data.py` first, then use "data/train/"
+  # HuggingFace: use "tobil/qmd-query-expansion-train" (already prepared)
+  name: "data/train/"
+  text_field: "text"
+  split: "train"
+  eval_split: 0.1
+
+training:
+  epochs: 5
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2e-4
+  max_length: 512
+  warmup_ratio: 0.03
+  lr_scheduler: "cosine"
+  # Save checkpoints every 30 minutes
+  save_interval_minutes: 30
+  # Fallback time-step save cadence if needed (not used for wall-clock mode)
+  save_steps: 200
+  save_total_limit: 3
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+tracking:
+  project: "qmd-query-expansion"
+  run_name: "sft-1.7B"

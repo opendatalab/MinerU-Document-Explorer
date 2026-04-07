@@ -1,0 +1,506 @@
+/**
+ * Collections configuration management
+ *
+ * This module manages the YAML-based collection configuration at ~/.config/qmd/index.yml.
+ * Collections define which directories to index and their associated contexts.
+ */
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { join, dirname } from "path";
+import { homedir } from "os";
+import YAML from "yaml";
+import { validateCollectionConfig } from "./config-schema.js";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * Context definitions for a collection
+ * Key is path prefix (e.g., "/", "/2024", "/Board of Directors")
+ * Value is the context description
+ */
+export type ContextMap = Record<string, string>;
+
+/**
+ * A single collection configuration
+ */
+export interface Collection {
+  path: string;              // Absolute path to index
+  pattern: string;           // Glob pattern (e.g., "**/*.md")
+  ignore?: string[];         // Glob patterns to exclude (e.g., ["Sessions/**"])
+  context?: ContextMap;      // Optional context definitions
+  update?: string;           // Optional bash command to run during qmd update
+  includeByDefault?: boolean; // Include in queries by default (default: true)
+  type?: "raw" | "wiki";    // "raw" = immutable sources (default), "wiki" = LLM-maintained pages
+}
+
+/**
+ * The complete configuration file structure
+ */
+export interface CollectionConfig {
+  global_context?: string;                    // Context applied to all collections
+  collections: Record<string, Collection>;    // Collection name -> config
+}
+
+/**
+ * Collection with its name (for return values)
+ */
+export interface NamedCollection extends Collection {
+  name: string;
+}
+
+// ============================================================================
+// Configuration paths
+// ============================================================================
+
+// Current index name (default: "index")
+let currentIndexName: string = "index";
+
+// SDK mode: optional in-memory config or custom config path
+let configSource: { type: 'file'; path?: string } | { type: 'inline'; config: CollectionConfig } = { type: 'file' };
+
+/**
+ * Set the config source for SDK mode.
+ * - File path: load/save from a specific YAML file
+ * - Inline config: use an in-memory CollectionConfig (saveConfig updates in place, no file I/O)
+ * - undefined: reset to default file-based config
+ */
+export function setConfigSource(source?: { configPath?: string; config?: CollectionConfig }): void {
+  if (!source) {
+    configSource = { type: 'file' };
+    return;
+  }
+  if (source.config) {
+    // Ensure collections object exists
+    if (!source.config.collections) {
+      source.config.collections = {};
+    }
+    configSource = { type: 'inline', config: source.config };
+  } else if (source.configPath) {
+    configSource = { type: 'file', path: source.configPath };
+  } else {
+    configSource = { type: 'file' };
+  }
+}
+
+/**
+ * Set the current index name for config file lookup
+ * Config file will be ~/.config/qmd/{indexName}.yml
+ */
+export function setConfigIndexName(name: string): void {
+  // Resolve relative paths to absolute paths and sanitize for use as filename
+  if (name.includes('/')) {
+    const { resolve } = require('path');
+    const { cwd } = require('process');
+    const absolutePath = resolve(cwd(), name);
+    // Replace path separators with underscores to create a valid filename
+    currentIndexName = absolutePath.replace(/\//g, '_').replace(/^_/, '');
+  } else {
+    currentIndexName = name;
+  }
+}
+
+function getConfigDir(): string {
+  // Allow override via QMD_CONFIG_DIR for testing
+  if (process.env.QMD_CONFIG_DIR) {
+    return process.env.QMD_CONFIG_DIR;
+  }
+  // Respect XDG Base Directory specification (consistent with store.ts)
+  if (process.env.XDG_CONFIG_HOME) {
+    return join(process.env.XDG_CONFIG_HOME, "qmd");
+  }
+  return join(homedir(), ".config", "qmd");
+}
+
+function getConfigFilePath(): string {
+  return join(getConfigDir(), `${currentIndexName}.yml`);
+}
+
+
+// ============================================================================
+// Core functions
+// ============================================================================
+
+/**
+ * Load configuration from the configured source.
+ * - Inline config: returns the in-memory object directly
+ * - File-based: reads from YAML file (default ~/.config/qmd/index.yml)
+ * Returns empty config if file doesn't exist
+ *
+ * Validates the configuration schema and throws detailed errors if invalid.
+ */
+export function loadConfig(): CollectionConfig {
+  // SDK inline config mode
+  if (configSource.type === 'inline') {
+    return validateCollectionConfig(configSource.config, "inline config") as CollectionConfig;
+  }
+
+  // File-based config (SDK custom path or default)
+  const configPath = configSource.path || getConfigFilePath();
+  if (!existsSync(configPath)) {
+    return { collections: {} };
+  }
+
+  try {
+    const content = readFileSync(configPath, "utf-8");
+    const rawConfig = YAML.parse(content);
+
+    // Validate the parsed configuration
+    return validateCollectionConfig(rawConfig, configPath) as CollectionConfig;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Invalid configuration")) {
+      // Re-throw validation errors as-is
+      throw error;
+    }
+    throw new Error(`Failed to parse ${configPath}: ${error}`);
+  }
+}
+
+/**
+ * Save configuration to the configured source.
+ * - Inline config: updates the in-memory object (no file I/O)
+ * - File-based: writes to YAML file (default ~/.config/qmd/index.yml)
+ */
+export function saveConfig(config: CollectionConfig): void {
+  // SDK inline config mode: update in place, no file I/O
+  if (configSource.type === 'inline') {
+    configSource.config = config;
+    return;
+  }
+
+  const configPath = configSource.path || getConfigFilePath();
+  const configDir = dirname(configPath);
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+  }
+
+  try {
+    const yaml = YAML.stringify(config, {
+      indent: 2,
+      lineWidth: 0,  // Don't wrap lines
+    });
+    writeFileSync(configPath, yaml, "utf-8");
+  } catch (error) {
+    throw new Error(`Failed to write ${configPath}: ${error}`);
+  }
+}
+
+/**
+ * Get a specific collection by name
+ * Returns null if not found
+ */
+export function getCollection(name: string): NamedCollection | null {
+  const config = loadConfig();
+  const collection = config.collections[name];
+
+  if (!collection) {
+    return null;
+  }
+
+  return { name, ...collection };
+}
+
+/**
+ * List all collections
+ */
+export function listCollections(): NamedCollection[] {
+  const config = loadConfig();
+  return Object.entries(config.collections).map(([name, collection]) => ({
+    name,
+    ...collection,
+  }));
+}
+
+/**
+ * Get collections that are included by default in queries
+ */
+export function getDefaultCollections(): NamedCollection[] {
+  return listCollections().filter(c => c.includeByDefault !== false);
+}
+
+/**
+ * Get collection names that are included by default
+ */
+export function getDefaultCollectionNames(): string[] {
+  return getDefaultCollections().map(c => c.name);
+}
+
+/**
+ * Update a collection's settings
+ */
+export function updateCollectionSettings(
+  name: string,
+  settings: { update?: string | null; includeByDefault?: boolean; type?: "raw" | "wiki" }
+): boolean {
+  const config = loadConfig();
+  const collection = config.collections[name];
+  if (!collection) return false;
+
+  if (settings.update !== undefined) {
+    if (settings.update === null) {
+      delete collection.update;
+    } else {
+      collection.update = settings.update;
+    }
+  }
+
+  if (settings.includeByDefault !== undefined) {
+    if (settings.includeByDefault === true) {
+      delete collection.includeByDefault;
+    } else {
+      collection.includeByDefault = settings.includeByDefault;
+    }
+  }
+
+  if (settings.type !== undefined) {
+    if (settings.type === "raw") {
+      delete collection.type;
+    } else {
+      collection.type = settings.type;
+    }
+  }
+
+  saveConfig(config);
+  return true;
+}
+
+/**
+ * Add or update a collection
+ */
+export function addCollection(
+  name: string,
+  path: string,
+  pattern: string = "**/*.md",
+  type?: "raw" | "wiki"
+): void {
+  const config = loadConfig();
+  const existing = config.collections[name];
+
+  config.collections[name] = {
+    ...existing,
+    path,
+    pattern,
+    ...(type ? { type } : {}),
+  };
+
+  saveConfig(config);
+}
+
+/**
+ * Remove a collection
+ */
+export function removeCollection(name: string): boolean {
+  const config = loadConfig();
+
+  if (!config.collections[name]) {
+    return false;
+  }
+
+  delete config.collections[name];
+  saveConfig(config);
+  return true;
+}
+
+/**
+ * Rename a collection
+ */
+export function renameCollection(oldName: string, newName: string): boolean {
+  const config = loadConfig();
+
+  if (!config.collections[oldName]) {
+    return false;
+  }
+
+  if (config.collections[newName]) {
+    throw new Error(`Collection '${newName}' already exists`);
+  }
+
+  config.collections[newName] = config.collections[oldName];
+  delete config.collections[oldName];
+  saveConfig(config);
+  return true;
+}
+
+// ============================================================================
+// Context management
+// ============================================================================
+
+/**
+ * Get global context
+ */
+export function getGlobalContext(): string | undefined {
+  const config = loadConfig();
+  return config.global_context;
+}
+
+/**
+ * Set global context
+ */
+export function setGlobalContext(context: string | undefined): void {
+  const config = loadConfig();
+  config.global_context = context;
+  saveConfig(config);
+}
+
+/**
+ * Get all contexts for a collection
+ */
+export function getContexts(collectionName: string): ContextMap | undefined {
+  const collection = getCollection(collectionName);
+  return collection?.context;
+}
+
+/**
+ * Add or update a context for a specific path in a collection
+ */
+export function addContext(
+  collectionName: string,
+  pathPrefix: string,
+  contextText: string
+): boolean {
+  const config = loadConfig();
+  const collection = config.collections[collectionName];
+
+  if (!collection) {
+    return false;
+  }
+
+  if (!collection.context) {
+    collection.context = {};
+  }
+
+  collection.context[pathPrefix] = contextText;
+  saveConfig(config);
+  return true;
+}
+
+/**
+ * Remove a context from a collection
+ */
+export function removeContext(
+  collectionName: string,
+  pathPrefix: string
+): boolean {
+  const config = loadConfig();
+  const collection = config.collections[collectionName];
+
+  if (!collection?.context?.[pathPrefix]) {
+    return false;
+  }
+
+  delete collection.context[pathPrefix];
+
+  // Remove empty context object
+  if (Object.keys(collection.context).length === 0) {
+    delete collection.context;
+  }
+
+  saveConfig(config);
+  return true;
+}
+
+/**
+ * List all contexts across all collections
+ */
+export function listAllContexts(): Array<{
+  collection: string;
+  path: string;
+  context: string;
+}> {
+  const config = loadConfig();
+  const results: Array<{ collection: string; path: string; context: string }> = [];
+
+  // Add global context if present
+  if (config.global_context) {
+    results.push({
+      collection: "*",
+      path: "/",
+      context: config.global_context,
+    });
+  }
+
+  // Add collection contexts
+  for (const [name, collection] of Object.entries(config.collections)) {
+    if (collection.context) {
+      for (const [path, context] of Object.entries(collection.context)) {
+        results.push({
+          collection: name,
+          path,
+          context,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Find best matching context for a given collection and path
+ * Returns the most specific matching context (longest path prefix match)
+ */
+export function findContextForPath(
+  collectionName: string,
+  filePath: string
+): string | undefined {
+  const config = loadConfig();
+  const collection = config.collections[collectionName];
+
+  if (!collection?.context) {
+    return config.global_context;
+  }
+
+  // Find all matching prefixes
+  const matches: Array<{ prefix: string; context: string }> = [];
+
+  for (const [prefix, context] of Object.entries(collection.context)) {
+    // Normalize paths for comparison
+    const normalizedPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
+    const normalizedPrefix = prefix.startsWith("/") ? prefix : `/${prefix}`;
+
+    if (normalizedPrefix === "/" || normalizedPath === normalizedPrefix
+      || normalizedPath.startsWith(normalizedPrefix.endsWith("/") ? normalizedPrefix : normalizedPrefix + "/")) {
+      matches.push({ prefix: normalizedPrefix, context });
+    }
+  }
+
+  // Return most specific match (longest prefix)
+  if (matches.length > 0) {
+    matches.sort((a, b) => b.prefix.length - a.prefix.length);
+    return matches[0]!.context;
+  }
+
+  // Fallback to global context
+  return config.global_context;
+}
+
+// ============================================================================
+// Utility functions
+// ============================================================================
+
+/**
+ * Get the config file path (useful for error messages)
+ */
+export function getConfigPath(): string {
+  if (configSource.type === 'inline') return '<inline>';
+  return configSource.path || getConfigFilePath();
+}
+
+/**
+ * Check if config file exists
+ */
+export function configExists(): boolean {
+  if (configSource.type === 'inline') return true;
+  const path = configSource.path || getConfigFilePath();
+  return existsSync(path);
+}
+
+/**
+ * Validate a collection name
+ * Collection names must be valid and not contain special characters
+ */
+export function isValidCollectionName(name: string): boolean {
+  // Allow alphanumeric, hyphens, underscores
+  return /^[a-zA-Z0-9_-]+$/.test(name);
+}

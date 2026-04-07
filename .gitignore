@@ -1,0 +1,38 @@
+node_modules/
+dist/
+package-lock.json
+.npmrc
+*.sqlite
+.DS_Store
+archive/
+texts/
+.cursor/
+.github/copilot/
+*.md
+!README.md
+!README-zh.md
+!CLAUDE.md
+!CHANGELOG.md
+!CONTRIBUTING.md
+!WIKI-PROGRESS.md
+!skills/**/*.md
+!finetune/*.md
+!docs/**/*.md
+!demo/README.md
+!demo/AGENT-PROMPT.md
+finetune/outputs/
+finetune/data/train/
+.claude/
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+# OMC working directories
+.omc/
+/MinerU-Document-Explorer/
+# Demo generated data (committed: scripts + README only)
+demo/papers/
+demo/wiki/
+demo/survey.md

@@ -1,0 +1,94 @@
+{
+  "name": "mineru-document-explorer",
+  "version": "1.0.0",
+  "description": "MinerU Document Explorer — Agent-native knowledge engine: hybrid search and deep reading over markdown, PDF, DOCX, PPTX with BM25, vector search, and LLM reranking",
+  "private": false,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist/",
+    "bin/",
+    "skills/",
+    "references/",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "qmd": "bin/qmd"
+  },
+  "scripts": {
+    "prepare": "[ -d .git ] && ./scripts/install-hooks.sh || true",
+    "build": "node scripts/sync-embedded-skills.js && tsc -p tsconfig.build.json && cp -r src/backends/python dist/backends/python && printf '#!/usr/bin/env node\n' | cat - dist/cli/qmd.js > dist/cli/qmd.tmp && mv dist/cli/qmd.tmp dist/cli/qmd.js && chmod +x dist/cli/qmd.js",
+    "test": "vitest run --reporter=verbose test/",
+    "qmd": "tsx src/cli/qmd.ts",
+    "update": "tsx src/cli/qmd.ts update",
+    "embed": "tsx src/cli/qmd.ts embed",
+    "search": "tsx src/cli/qmd.ts search",
+    "vsearch": "tsx src/cli/qmd.ts vsearch",
+    "rerank": "tsx src/cli/qmd.ts rerank",
+    "inspector": "npx @modelcontextprotocol/inspector tsx src/cli/qmd.ts mcp",
+    "release": "./scripts/release.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/opendatalab/MinerU-Document-Explorer.git"
+  },
+  "homepage": "https://github.com/opendatalab/MinerU-Document-Explorer#readme",
+  "bugs": {
+    "url": "https://github.com/opendatalab/MinerU-Document-Explorer/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "better-sqlite3": "^12.4.5",
+    "fast-glob": "^3.3.0",
+    "node-llama-cpp": "^3.17.1",
+    "picomatch": "^4.0.0",
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "yaml": "^2.8.2",
+    "zod": "^4.2.1"
+  },
+  "optionalDependencies": {
+    "sqlite-vec-darwin-arm64": "^0.1.7-alpha.2",
+    "sqlite-vec-darwin-x64": "^0.1.7-alpha.2",
+    "sqlite-vec-linux-arm64": "^0.1.7-alpha.2",
+    "sqlite-vec-linux-x64": "^0.1.7-alpha.2",
+    "sqlite-vec-windows-x64": "^0.1.7-alpha.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "tsx": "^4.0.0",
+    "vitest": "^3.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [
+    "markdown",
+    "search",
+    "fts",
+    "full-text-search",
+    "vector",
+    "semantic-search",
+    "sqlite",
+    "bm25",
+    "embeddings",
+    "rag",
+    "mcp",
+    "reranking",
+    "knowledge-base",
+    "local-ai",
+    "llm"
+  ],
+  "author": "OpenDataLab",
+  "license": "MIT"
+}

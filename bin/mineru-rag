@@ -1,0 +1,5 @@
+#!/bin/sh
+# Legacy alias — delegates to the qmd CLI.
+# The project was renamed from MinerU-RAG to MinerU Document Explorer.
+DIR="$(cd -P "$(dirname "$0")" && pwd)"
+exec "$DIR/qmd" "$@"

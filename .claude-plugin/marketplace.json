@@ -1,0 +1,29 @@
+{
+	"name": "qmd",
+	"owner": {
+		"name": "opendatalab",
+		"email": ""
+	},
+	"plugins": [
+		{
+			"name": "qmd",
+			"source": "./",
+			"description": "Search and retrieve documents from local markdown files.",
+			"version": "0.1.0",
+			"author": {
+				"name": "opendatalab",
+				"email": ""
+			},
+			"repository": "https://github.com/opendatalab/MinerU-Document-Explorer",
+			"license": "MIT",
+			"keywords": ["markdown", "search", "qmd"],
+			"skills": ["./skills/"],
+			"mcpServers": {
+				"qmd": {
+					"command": "qmd",
+					"args": ["mcp"]
+				}
+			}
+		}
+	]
+}

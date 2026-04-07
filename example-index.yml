@@ -1,0 +1,33 @@
+# QMD Collections Configuration
+# Location: ~/.config/qmd/index.yml
+#
+# This file defines all collections and their contexts.
+# You can manually edit this file - changes take effect immediately.
+
+# Global context applied to all collections
+# Use this for universal search instructions or patterns
+global_context: "If you see a relevant [[WikiWord]], you can search for that WikiWord to get more context."
+
+# Collection definitions
+collections:
+  # Meeting notes
+  Meetings:
+    path: ~/Documents/Meetings
+    pattern: "**/*.md"
+    context:
+      "/": "Meeting notes and summaries"
+
+  # Daily journal entries
+  journals:
+    path: ~/Documents/Notes
+    pattern: "**/*.md"
+    context:
+      "/journal/2024": "Daily notes from 2024"
+      "/journal/2025": "Daily notes from 2025"
+      "/": "Notes vault"
+
+  codex:
+    path: ~/Documents/Codex
+    pattern: "**/*.md"
+    context:
+      "/": "Thematic collections of important concepts and discussions"
