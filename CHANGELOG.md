@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- **PPTX indexing crash on python-pptx >= 1.0** — `shape.placeholder_format`
+  now raises `ValueError` for non-placeholder shapes instead of returning
+  `None`. Use `shape.is_placeholder` guard with `try/except` fallback so PPTX
+  files index correctly on all python-pptx versions.
+
+### Docs
+
+- **Document Processing Setup** — added setup guidance to README.md,
+  README-zh.md, CLAUDE.md, SKILL.md, and quickstart.md so agents can
+  interactively walk users through Python dependency installation, MinerU
+  Cloud configuration, and `doc-reading.json` setup. New "Playbook 0:
+  First-Run Setup & Configuration" in the agent skill covers the full
+  interactive setup flow.
+
 ## [1.0.2] - 2026-04-07
 
 ### Fixes
