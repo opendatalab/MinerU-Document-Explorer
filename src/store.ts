@@ -1267,16 +1267,18 @@ export async function generateEmbeddings(
   const db = store.db;
   const model = options?.model ?? DEFAULT_EMBED_MODEL;
   const now = new Date().toISOString();
+  // Normalize: treat empty array as undefined (no filter)
+  const collections = options?.collections?.length ? options.collections : undefined;
 
   if (options?.force) {
-    if (options.collections && options.collections.length > 0) {
-      clearEmbeddingsForCollections(db, options.collections);
+    if (collections) {
+      clearEmbeddingsForCollections(db, collections);
     } else {
       clearAllEmbeddings(db);
     }
   }
 
-  const hashesToEmbed = getHashesForEmbedding(db, options?.collections);
+  const hashesToEmbed = getHashesForEmbedding(db, collections);
 
   if (hashesToEmbed.length === 0) {
     return { docsProcessed: 0, chunksEmbedded: 0, errors: 0, durationMs: 0 };
@@ -2611,36 +2613,43 @@ export function clearAllEmbeddings(db: Database): void {
 
 /**
  * Clear embeddings only for hashes belonging to documents in the given collections.
+ * Batches deletes to stay within SQLite's variable limit.
  */
 export function clearEmbeddingsForCollections(db: Database, collections: string[]): void {
+  const BATCH = 400;
   const placeholders = collections.map(() => "?").join(", ");
+  const hashes = db.prepare(`
+    SELECT DISTINCT hash FROM documents
+    WHERE active = 1 AND collection IN (${placeholders})
+  `).all(...collections) as { hash: string }[];
+
+  if (hashes.length === 0) return;
+
+  const hashValues = hashes.map((h) => h.hash);
+
   db.exec("BEGIN");
   try {
-    const hashes = db.prepare(`
-      SELECT DISTINCT hash FROM documents
-      WHERE active = 1 AND collection IN (${placeholders})
-    `).all(...collections) as { hash: string }[];
+    for (let i = 0; i < hashValues.length; i += BATCH) {
+      const batch = hashValues.slice(i, i + BATCH);
+      const bp = batch.map(() => "?").join(", ");
 
-    if (hashes.length > 0) {
-      const hashValues = hashes.map((h) => h.hash);
-      const hashPlaceholders = hashValues.map(() => "?").join(", ");
-
-      // Collect hash_seq keys before deleting from content_vectors
       const seqRows = db.prepare(
-        `SELECT hash || '_' || seq as hash_seq FROM content_vectors WHERE hash IN (${hashPlaceholders})`
-      ).all(...hashValues) as { hash_seq: string }[];
+        `SELECT hash || '_' || seq as hash_seq FROM content_vectors WHERE hash IN (${bp})`
+      ).all(...batch) as { hash_seq: string }[];
 
-      // Delete from vectors_vec virtual table
       if (seqRows.length > 0) {
-        const seqPlaceholders = seqRows.map(() => "?").join(", ");
-        try {
-          db.prepare(`DELETE FROM vectors_vec WHERE hash_seq IN (${seqPlaceholders})`).run(...seqRows.map((r) => r.hash_seq));
-        } catch {
-          // vectors_vec may not exist if embeddings were never fully generated
+        for (let j = 0; j < seqRows.length; j += BATCH) {
+          const seqBatch = seqRows.slice(j, j + BATCH).map((r) => r.hash_seq);
+          const sp = seqBatch.map(() => "?").join(", ");
+          try {
+            db.prepare(`DELETE FROM vectors_vec WHERE hash_seq IN (${sp})`).run(...seqBatch);
+          } catch {
+            // vectors_vec may not exist yet
+          }
         }
       }
 
-      db.prepare(`DELETE FROM content_vectors WHERE hash IN (${hashPlaceholders})`).run(...hashValues);
+      db.prepare(`DELETE FROM content_vectors WHERE hash IN (${bp})`).run(...batch);
     }
     db.exec("COMMIT");
   } catch (err) {
