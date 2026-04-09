@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-04-09
+
+### Fixes
+
+- **Embed: `-c`/`--collection` filter now works** — the flag was parsed by the
+  CLI but never propagated to the embedding pipeline; `qmd embed -c mycoll` now
+  only embeds documents from the specified collection(s). #2
+- **Embed: collection filtering in `getHashesForEmbedding`** — the SQL query
+  previously fetched all active documents missing embeddings regardless of
+  collection; it now accepts an optional collection filter. #2
+- **Embed: skip HF model resolution when local GGUF exists** — on Windows,
+  `resolveModelFile(hf:...)` could hang at "Gathering information" even when the
+  GGUF was already cached locally; the resolver now checks the local cache
+  directory first and only falls back to HF URI resolution when the file is not
+  found. #2
+
 ### Docs
 
 - **Python 3.10+ is now a required dependency** — updated README, README-zh,
@@ -865,6 +881,7 @@ notes, journals, and meeting transcripts.
 - CLI: `qmd add`, `qmd embed`, `qmd search`, `qmd vsearch`, `qmd query`,
   `qmd get`. ~1800 lines of TypeScript in a single `qmd.ts` file.
 
-[Unreleased]: https://github.com/opendatalab/MinerU-Document-Explorer/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/opendatalab/MinerU-Document-Explorer/compare/v1.0.6...HEAD
+[1.0.6]: https://github.com/opendatalab/MinerU-Document-Explorer/compare/v1.0.5...v1.0.6
 [1.0.0]: https://github.com/opendatalab/MinerU-Document-Explorer/releases/tag/v1.0.0
 [0.9.0]: https://github.com/opendatalab/MinerU-Document-Explorer/compare/v0.8.0...v0.9.0

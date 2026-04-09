@@ -1558,7 +1558,7 @@ function renderProgressBar(percent: number, width: number = 30): string {
   return bar;
 }
 
-async function vectorIndex(model: string = DEFAULT_EMBED_MODEL, force: boolean = false): Promise<void> {
+async function vectorIndex(model: string = DEFAULT_EMBED_MODEL, force: boolean = false, collections?: string[]): Promise<void> {
   printModelNotice([DEFAULT_EMBED_MODEL_URI]);
   const storeInstance = getStore();
   const db = storeInstance.db;
@@ -1566,9 +1566,12 @@ async function vectorIndex(model: string = DEFAULT_EMBED_MODEL, force: boolean =
   if (force) {
     console.log(`${c.yellow}Force re-indexing: clearing all vectors...${c.reset}`);
   }
+  if (collections && collections.length > 0) {
+    console.log(`${c.dim}Filtering by collection(s): ${collections.join(", ")}${c.reset}`);
+  }
 
   // Check if there's work to do before starting
-  const hashesToEmbed = getHashesForEmbedding(db);
+  const hashesToEmbed = getHashesForEmbedding(db, collections);
   if (hashesToEmbed.length === 0 && !force) {
     console.log(`${c.green}✓ All content hashes already have embeddings.${c.reset}`);
     closeDb();
@@ -1586,6 +1589,7 @@ async function vectorIndex(model: string = DEFAULT_EMBED_MODEL, force: boolean =
     result = await generateEmbeddings(storeInstance, {
       force,
       model,
+      collections,
       onProgress: (info) => {
         if (info.totalBytes === 0) return;
         const percent = (info.bytesProcessed / info.totalBytes) * 100;
@@ -2440,7 +2444,7 @@ function showHelp(): void {
   console.log("Maintenance:");
   console.log("  qmd status                    - View index + collection health");
   console.log("  qmd update [--pull]           - Re-index collections (optionally git pull first)");
-  console.log("  qmd embed [-f]                - Generate/refresh vector embeddings");
+  console.log("  qmd embed [-f] [-c <name>]    - Generate/refresh vector embeddings");
   console.log("  qmd cleanup                   - Clear caches, vacuum DB");
   console.log("");
   console.log("Query syntax (qmd query):");
@@ -2820,7 +2824,7 @@ if (isMain) {
       break;
 
     case "embed":
-      await vectorIndex(DEFAULT_EMBED_MODEL, !!cli.values.force);
+      await vectorIndex(DEFAULT_EMBED_MODEL, !!cli.values.force, cli.opts.collection as string[] | undefined);
       break;
 
     case "pull": {

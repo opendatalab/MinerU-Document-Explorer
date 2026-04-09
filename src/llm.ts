@@ -563,11 +563,26 @@ export class LlamaCpp implements LLM {
   }
 
   /**
-   * Resolve a model URI to a local path, downloading if needed
+   * Resolve a model URI to a local path, downloading if needed.
+   * For hf: URIs, checks the local cache first to avoid blocking HF resolution
+   * on platforms where it may hang (e.g. Windows).
    */
   private async resolveModel(modelUri: string): Promise<string> {
     this.ensureModelCacheDir();
-    // resolveModelFile handles HF URIs and downloads to the cache dir
+
+    if (modelUri.startsWith("hf:")) {
+      const filename = modelUri.split("/").pop();
+      if (filename) {
+        const entries = readdirSync(this.modelCacheDir, { withFileTypes: true });
+        const localMatch = entries.find(
+          (e) => e.isFile() && e.name.includes(filename)
+        );
+        if (localMatch) {
+          return join(this.modelCacheDir, localMatch.name);
+        }
+      }
+    }
+
     return await resolveModelFile(modelUri, this.modelCacheDir);
   }
 

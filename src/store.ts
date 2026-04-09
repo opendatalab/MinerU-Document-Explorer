@@ -1016,7 +1016,7 @@ export type Store = {
   getActiveDocumentPaths: (collectionName: string) => string[];
 
   // Vector/embedding operations
-  getHashesForEmbedding: () => { hash: string; body: string; path: string }[];
+  getHashesForEmbedding: (collections?: string[]) => { hash: string; body: string; path: string }[];
   clearAllEmbeddings: () => void;
   insertEmbedding: (hash: string, seq: number, pos: number, embedding: Float32Array, model: string, embeddedAt: string) => void;
 
@@ -1260,6 +1260,7 @@ export async function generateEmbeddings(
   options?: {
     force?: boolean;
     model?: string;
+    collections?: string[];
     onProgress?: (info: EmbedProgress) => void;
   }
 ): Promise<EmbedResult> {
@@ -1271,7 +1272,7 @@ export async function generateEmbeddings(
     clearAllEmbeddings(db);
   }
 
-  const hashesToEmbed = getHashesForEmbedding(db);
+  const hashesToEmbed = getHashesForEmbedding(db, options?.collections);
 
   if (hashesToEmbed.length === 0) {
     return { docsProcessed: 0, chunksEmbedded: 0, errors: 0, durationMs: 0 };
@@ -1465,7 +1466,7 @@ export function createStore(dbPath?: string): Store {
     getActiveDocumentPaths: (collectionName: string) => getActiveDocumentPaths(db, collectionName),
 
     // Vector/embedding operations
-    getHashesForEmbedding: () => getHashesForEmbedding(db),
+    getHashesForEmbedding: (collections?: string[]) => getHashesForEmbedding(db, collections),
     clearAllEmbeddings: () => clearAllEmbeddings(db),
     insertEmbedding: (hash: string, seq: number, pos: number, embedding: Float32Array, model: string, embeddedAt: string) => insertEmbedding(db, hash, seq, pos, embedding, model, embeddedAt),
   };
@@ -1624,7 +1625,17 @@ export type IndexStatus = {
 // Index health
 // =============================================================================
 
-export function getHashesNeedingEmbedding(db: Database): number {
+export function getHashesNeedingEmbedding(db: Database, collections?: string[]): number {
+  if (collections && collections.length > 0) {
+    const placeholders = collections.map(() => "?").join(", ");
+    const result = db.prepare(`
+      SELECT COUNT(DISTINCT d.hash) as count
+      FROM documents d
+      LEFT JOIN content_vectors v ON d.hash = v.hash AND v.seq = 0
+      WHERE d.active = 1 AND v.hash IS NULL AND d.collection IN (${placeholders})
+    `).get(...collections) as { count: number };
+    return result.count;
+  }
   const result = db.prepare(`
     SELECT COUNT(DISTINCT d.hash) as count
     FROM documents d
@@ -2562,8 +2573,20 @@ import {
 /**
  * Get all unique content hashes that need embeddings (from active documents).
  * Returns hash, document body, and a sample path for display purposes.
+ * Optionally filter by collection names.
  */
-export function getHashesForEmbedding(db: Database): { hash: string; body: string; path: string }[] {
+export function getHashesForEmbedding(db: Database, collections?: string[]): { hash: string; body: string; path: string }[] {
+  if (collections && collections.length > 0) {
+    const placeholders = collections.map(() => "?").join(", ");
+    return db.prepare(`
+      SELECT d.hash, c.doc as body, MIN(d.path) as path
+      FROM documents d
+      JOIN content c ON d.hash = c.hash
+      LEFT JOIN content_vectors v ON d.hash = v.hash AND v.seq = 0
+      WHERE d.active = 1 AND v.hash IS NULL AND d.collection IN (${placeholders})
+      GROUP BY d.hash
+    `).all(...collections) as { hash: string; body: string; path: string }[];
+  }
   return db.prepare(`
     SELECT d.hash, c.doc as body, MIN(d.path) as path
     FROM documents d
