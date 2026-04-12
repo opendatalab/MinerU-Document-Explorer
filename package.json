@@ -1,6 +1,6 @@
 {
   "name": "mineru-document-explorer",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "MinerU Document Explorer — Agent-native knowledge engine: hybrid search and deep reading over markdown, PDF, DOCX, PPTX with BM25, vector search, and LLM reranking",
   "private": false,
   "type": "module",

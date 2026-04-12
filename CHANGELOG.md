@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-04-12
+
 ### Fixes
 
 - **Actionable error for unindexed files in doc-\* commands** — when `doc-toc`,
