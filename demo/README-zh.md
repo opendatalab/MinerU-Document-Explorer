@@ -44,6 +44,15 @@
 
 ---
 
+## 课程资料（跟做版）
+
+如果你希望“跟着跑一跑，马上看到产物”，建议从这里开始：
+
+- [`WORKSHOP-zh.md`](WORKSHOP-zh.md)：30–45 分钟实操课（从 0 跑通 demo）
+- [`AGENT-PROMPT-zh.md`](AGENT-PROMPT-zh.md)：中文 Agent Prompt（可直接粘贴给 Cursor/Claude）
+- [`EXERCISES-zh.md`](EXERCISES-zh.md)：练习题 + 验收清单（体验检索/精读/写回/维护）
+- [`INSTRUCTOR-zh.md`](INSTRUCTOR-zh.md)：讲师备忘（课堂节奏 + 常见故障兜底）
+
 ## 典型使用场景
 
 ### 场景 1：科研文献综述
@@ -217,7 +226,7 @@ expand:brief query          # LLM 查询扩展后搜索
 | `doc_read` | 按地址精读指定章节 | `doc_read({ file: "sources/paper.pdf", addresses: ["page:3-5"] })` |
 | `doc_grep` | 文档内正则搜索 | `doc_grep({ file: "sources/paper.pdf", pattern: "attention" })` |
 | `doc_query` | 文档内语义搜索 | `doc_query({ file: "sources/paper.pdf", query: "model architecture" })` |
-| `doc_elements` | 提取表格、图表、公式 | `doc_elements({ file: "sources/paper.pdf", types: ["table"] })` |
+| `doc_elements` | 提取表格、图表、公式 | `doc_elements({ file: "sources/paper.pdf", element_types: ["table"] })` |
 
 **`doc_read` 地址格式**：
 
@@ -247,7 +256,7 @@ doc_read(paper.pdf, "page:12")  # 精读实验结果
 |------|------|----------|
 | `doc_write` | 写入 Wiki 页面（自动索引 + 日志） | `doc_write({ collection: "wiki", path: "concepts/rag.md", content: "..." })` |
 | `doc_links` | 查看文档的前向/反向链接 | `doc_links({ file: "wiki/concepts/rag.md" })` |
-| `wiki_ingest` | 分析源文档，准备 Wiki 摄取 | `wiki_ingest({ source: "sources/paper.pdf", wiki: "wiki" })` |
+| `wiki_ingest` | 分析源文档，准备 Wiki 摄取 | `wiki_ingest({ source: "sources/paper.pdf", wiki_collection: "wiki" })` |
 | `wiki_lint` | 健康检查（孤页、断链、过期页） | `wiki_lint()` |
 | `wiki_log` | 查看 Wiki 活动时间线 | `wiki_log()` |
 | `wiki_index` | 生成 Wiki 索引页 | `wiki_index({ collection: "wiki", write: true })` |
@@ -299,7 +308,7 @@ Agent: doc_toc({ file: "sources/2601.00123.pdf" })
 ### Phase 2: Wiki 构建（每篇论文 ~1 分钟）
 
 ```
-Agent: wiki_ingest({ source: "sources/2601.00123.pdf", wiki: "wiki" })
+Agent: wiki_ingest({ source: "sources/2601.00123.pdf", wiki_collection: "wiki" })
   → 返回论文内容 + 已有相关 Wiki 页面 + 建议的写入路径
 
 Agent: doc_read({ file: "sources/2601.00123.pdf", addresses: ["page:1-3"] })
@@ -374,6 +383,12 @@ qmd collection add ~/my-wiki --name wiki --type wiki
 
 ### MCP 客户端配置
 
+**Claude Code**（stdio 模式，推荐）：
+
+```bash
+claude mcp add qmd -- bun src/cli/qmd.ts --index demo mcp
+```
+
 **Cursor**（HTTP 模式）：
 
 ```json
@@ -384,12 +399,6 @@ qmd collection add ~/my-wiki --name wiki --type wiki
     }
   }
 }
-```
-
-**Claude Code**（stdio 模式）：
-
-```bash
-claude mcp add qmd -- bun src/cli/qmd.ts --index demo mcp
 ```
 
 **Claude Desktop**（stdio 模式）：

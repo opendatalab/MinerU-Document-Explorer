@@ -220,7 +220,7 @@ Navigate, search, and extract content within a single document — without loadi
 | `doc_read` | Read specific sections by address | `doc_read({ file: "sources/paper.pdf", addresses: ["page:3-5"] })` |
 | `doc_grep` | Regex search within a document | `doc_grep({ file: "sources/paper.pdf", pattern: "attention" })` |
 | `doc_query` | Semantic search within a document | `doc_query({ file: "sources/paper.pdf", query: "model architecture" })` |
-| `doc_elements` | Extract tables, figures, equations | `doc_elements({ file: "sources/paper.pdf", types: ["table"] })` |
+| `doc_elements` | Extract tables, figures, equations | `doc_elements({ file: "sources/paper.pdf", element_types: ["table"] })` |
 
 **`doc_read` address formats**:
 
@@ -250,7 +250,7 @@ Build and maintain an LLM Wiki knowledge base.
 |------|---------|---------|
 | `doc_write` | Write wiki page (auto-indexed + logged) | `doc_write({ collection: "wiki", path: "concepts/rag.md", content: "..." })` |
 | `doc_links` | View forward/backward links for a document | `doc_links({ file: "wiki/concepts/rag.md" })` |
-| `wiki_ingest` | Analyze source document for wiki ingestion | `wiki_ingest({ source: "sources/paper.pdf", wiki: "wiki" })` |
+| `wiki_ingest` | Analyze source document for wiki ingestion | `wiki_ingest({ source: "sources/paper.pdf", wiki_collection: "wiki" })` |
 | `wiki_lint` | Health check (orphans, broken links, stale pages) | `wiki_lint()` |
 | `wiki_log` | View wiki activity timeline | `wiki_log()` |
 | `wiki_index` | Generate wiki index page | `wiki_index({ collection: "wiki", write: true })` |
@@ -302,7 +302,7 @@ Agent: doc_toc({ file: "sources/2601.00123.pdf" })
 ### Phase 2: Wiki Building (~1 minute per paper)
 
 ```
-Agent: wiki_ingest({ source: "sources/2601.00123.pdf", wiki: "wiki" })
+Agent: wiki_ingest({ source: "sources/2601.00123.pdf", wiki_collection: "wiki" })
   → Returns paper content + existing related wiki pages + suggested write paths
 
 Agent: doc_read({ file: "sources/2601.00123.pdf", addresses: ["page:1-3"] })
@@ -377,6 +377,12 @@ Edit `demo/AGENT-PROMPT.md` to fit your scenario:
 
 ### MCP Client Configuration
 
+**Claude Code** (stdio mode, recommended):
+
+```bash
+claude mcp add qmd -- bun src/cli/qmd.ts --index demo mcp
+```
+
 **Cursor** (HTTP mode):
 
 ```json
@@ -387,12 +393,6 @@ Edit `demo/AGENT-PROMPT.md` to fit your scenario:
     }
   }
 }
-```
-
-**Claude Code** (stdio mode):
-
-```bash
-claude mcp add qmd -- bun src/cli/qmd.ts --index demo mcp
 ```
 
 **Claude Desktop** (stdio mode):

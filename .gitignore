@@ -20,6 +20,11 @@ texts/
 !docs/**/*.md
 !demo/README.md
 !demo/AGENT-PROMPT.md
+!demo/README-zh.md
+!demo/WORKSHOP-zh.md
+!demo/AGENT-PROMPT-zh.md
+!demo/EXERCISES-zh.md
+!demo/INSTRUCTOR-zh.md
 finetune/outputs/
 finetune/data/train/
 .claude/
