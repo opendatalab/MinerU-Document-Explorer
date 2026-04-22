@@ -47,8 +47,26 @@ if ! command -v python3 &>/dev/null; then
   exit 1
 fi
 
-if ! command -v bun &>/dev/null; then
-  echo "ERROR: bun not found. Install Bun first: https://bun.sh" >&2
+PY_MINOR="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+python3 - <<'PY' || {
+import sys
+major, minor = sys.version_info[:2]
+if (major, minor) < (3, 10):
+    raise SystemExit(1)
+PY
+  echo "ERROR: Python >= 3.10 is required (found ${PY_MINOR})." >&2
+  exit 1
+}
+
+QMD_CMD=()
+if command -v qmd &>/dev/null; then
+  QMD_CMD=(qmd)
+elif command -v bun &>/dev/null; then
+  QMD_CMD=(bun src/cli/qmd.ts)
+else
+  echo "ERROR: neither qmd nor bun found." >&2
+  echo "  Install qmd (recommended): npm install -g mineru-document-explorer" >&2
+  echo "  Or install Bun: https://bun.sh" >&2
   exit 1
 fi
 
@@ -80,22 +98,22 @@ else
   echo "  Tip: Set MINERU_API_KEY for higher quality extraction"
 fi
 
-bun src/cli/qmd.ts --index "$INDEX_NAME" collection remove sources 2>/dev/null || true
-bun src/cli/qmd.ts --index "$INDEX_NAME" collection remove wiki 2>/dev/null || true
+"${QMD_CMD[@]}" --index "$INDEX_NAME" collection remove sources 2>/dev/null || true
+"${QMD_CMD[@]}" --index "$INDEX_NAME" collection remove wiki 2>/dev/null || true
 
 # Index source PDFs (PyMuPDF extracts text automatically)
-bun src/cli/qmd.ts --index "$INDEX_NAME" collection add demo/papers \
+"${QMD_CMD[@]}" --index "$INDEX_NAME" collection add demo/papers \
   --name sources --mask '**/*.pdf'
 
 # Create empty wiki collection for agent to populate
 mkdir -p demo/wiki
-bun src/cli/qmd.ts --index "$INDEX_NAME" collection add demo/wiki \
+"${QMD_CMD[@]}" --index "$INDEX_NAME" collection add demo/wiki \
   --name wiki --type wiki
 
 # Add context
-bun src/cli/qmd.ts --index "$INDEX_NAME" context add qmd://sources \
+"${QMD_CMD[@]}" --index "$INDEX_NAME" context add qmd://sources \
   "arXiv RAG research papers (PDF, 2026+)"
-bun src/cli/qmd.ts --index "$INDEX_NAME" context add qmd://wiki \
+"${QMD_CMD[@]}" --index "$INDEX_NAME" context add qmd://wiki \
   "Wiki knowledge base: LLM-compiled summaries and analysis of RAG research"
 
 # ── Step 3: Embeddings (optional) ─────────────────────────────────
@@ -104,7 +122,7 @@ if [ "$SKIP_EMBED" = true ]; then
   echo "[3/3] Skipping embeddings (--skip-embed). BM25 search available."
 else
   echo "[3/3] Generating vector embeddings (may take several minutes)..."
-  bun src/cli/qmd.ts --index "$INDEX_NAME" embed || {
+  "${QMD_CMD[@]}" --index "$INDEX_NAME" embed || {
     echo "  Embedding failed. BM25 search still available."
   }
 fi
@@ -118,10 +136,10 @@ echo ""
 echo "The index is ready. Now let an LLM agent do the rest:"
 echo ""
 echo "  # Start MCP server for agent access"
-echo "  bun src/cli/qmd.ts --index $INDEX_NAME mcp"
+echo "  ${QMD_CMD[*]} --index $INDEX_NAME mcp"
 echo ""
 echo "  # Or HTTP mode (shared server, models stay loaded)"
-echo "  bun src/cli/qmd.ts --index $INDEX_NAME mcp --http"
+echo "  ${QMD_CMD[*]} --index $INDEX_NAME mcp --http"
 echo ""
 echo "Then point your agent at the MCP server and give it the prompt"
 echo "from demo/AGENT-PROMPT.md to build the wiki and survey."

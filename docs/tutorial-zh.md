@@ -52,15 +52,30 @@
 # 如果你已经在仓库根目录，可跳过前两行
 git clone https://github.com/opendatalab/MinerU-Document-Explorer.git
 cd MinerU-Document-Explorer
-bun install
-#
+
+# Python（文档处理必需）
+python3 --version  # 需要 >= 3.10
+
+# Node.js（运行 qmd CLI 所需；或使用 Bun 作为替代运行时）
+node --version     # 需要 >= 22
+
 # 安装/更新 qmd（后文默认使用 `qmd ...`）
-bun add -g mineru-document-explorer
+# 任选其一：npm / pnpm / yarn（不需要 bun）
+npm install -g mineru-document-explorer
+# pnpm add -g mineru-document-explorer
+# yarn global add mineru-document-explorer
+# 或者（如果你已经装了 bun）
+# bun add -g mineru-document-explorer
 qmd --version
 #
 pip install feedparser pymupdf
 bash demo/setup.sh --max 3 --skip-embed
 ```
+
+> 注意：安装 `mineru-document-explorer` 时会安装 `node-llama-cpp`。如果你的系统/架构没有对应的预编译二进制包，可能会触发本地编译（postinstall），需要 **CMake + C/C++ 编译工具链**。
+>
+> - macOS：先运行 `xcode-select --install`，再 `brew install cmake`
+> - Ubuntu/Debian：`sudo apt-get update && sudo apt-get install -y build-essential cmake`
 
 然后把 Agent 接上 MCP（推荐：Claude Code）：
 
@@ -101,8 +116,11 @@ claude mcp add qmd -- qmd --index demo mcp
 # Python（PDF/DOCX/PPTX 处理必需）
 python3 --version  # 需要 >= 3.10
 
-# Bun（本文命令会用到）
-bun --version
+# Node.js（运行 qmd CLI 所需；或使用 Bun 作为替代运行时）
+node --version     # 需要 >= 22
+
+# Bun（可选：仅当你想从源码运行 / 走 bun 命令时需要）
+bun --version      # 可选
 ```
 
 #### 安装 Python 依赖（二进制文档处理）
@@ -302,11 +320,16 @@ python3 -c "import pymupdf; import docx; import pptx; print('OK')"
 如果你在仓库里跑 Demo、但还没把 `qmd` 安装到 PATH，可以先用下面任一方式：
 
 ```bash
-# 方式 A：临时从源码运行（把文中所有 `qmd ...` 替换成这一条）
-bun src/cli/qmd.ts ...
+# 方式 A：临时从源码运行（不需要 bun；把文中所有 `qmd ...` 替换成这一条）
+npm install
+npm run qmd -- ...
 
-# 方式 B：安装/更新为全局命令（推荐）
-bun add -g mineru-document-explorer
+# 方式 A2：如果你更喜欢 bun，也可以用 bun 临时从源码运行
+# bun install
+# bun src/cli/qmd.ts ...
+
+# 方式 B：安装/更新为全局命令（推荐；不需要 bun）
+npm install -g mineru-document-explorer
 qmd --version
 ```
 
