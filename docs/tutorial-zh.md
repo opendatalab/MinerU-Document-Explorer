@@ -69,7 +69,17 @@ npm install -g mineru-document-explorer
 qmd --version
 #
 pip install feedparser pymupdf
-bash demo/setup.sh --max 3 --skip-embed
+bash demo/setup.sh --max 3
+
+# 注意：Demo 写入的是独立索引 index=demo，所以查看状态也要带 --index demo
+qmd --index demo status
+
+# 推荐启用“语义检索”：向量召回 + 重排 + 扩写
+# - 会在首次运行时自动下载/加载本地模型（总计约 2GB），耗时取决于网络
+# - 这会显著提升 `query` / `doc_query` 的召回与答案质量（尤其是同义表达、概念问题）
+export HF_ENDPOINT=https://hf-mirror.com # 大陆用户需要科学上网以下载Huggingface模型
+qmd --index demo embed
+qmd --index demo query "这几篇论文都在讲什么？给出共同主题与差异点"
 ```
 
 > 注意：安装 `mineru-document-explorer` 时会安装 `node-llama-cpp`。如果你的系统/架构没有对应的预编译二进制包，可能会触发本地编译（postinstall），需要 **CMake + C/C++ 编译工具链**。
@@ -232,6 +242,8 @@ claude mcp add qmd -- qmd mcp
 ### Skill：把“正确使用工具”的经验固化下来
 
 工具解决“能做什么”，Skill 解决“怎么做得对、做得省 token、做得可追溯”。
+
+> 说明：本文开头的 Demo 已经给了“最小提示词”，**不安装 Skill 也能跑通闭环**；安装 Skill 主要是让 Agent 更稳（少走弯路、少误用工具、输出更可追溯）。
 
 仓库内置 Skill：`skills/mineru-document-explorer/SKILL.md`，它会教会 Agent：
 
