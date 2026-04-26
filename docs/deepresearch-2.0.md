@@ -47,6 +47,9 @@ MinerU 文档探索器已经具备高精度文档解析、检索、深读、MCP 
 - 论文
 - 技术博客
 - 开源仓库
+- **Agent 运行时通过 `web_search` + `web_fetch` 动态发现的 Web 来源**：构建阶段由
+  `build-wiki` 状态机驱动，Agent 调用 `credibility_score` 对每个候选 URL 打分，
+  高于门槛（默认 0.3）方才抓取并摄取，结果存入 `sources/web/` collection。
 
 ### 3.3 技术边界
 - 可使用外部大模型 API
@@ -95,6 +98,18 @@ MinerU 文档探索器已经具备高精度文档解析、检索、深读、MCP 
 - 自动去重
 - 自动记录来源信息
 - 对来源进行基础分级
+- **Agent 运行时通过 `web_search → credibility_score → web_fetch → wiki_ingest`
+  链路发现并摄取新源**：种子语料建立索引后，Agent 在每轮交错循环中搜索 Web
+  来源、评分并按门槛过滤，再将通过审核的内容写入 `sources/web/` collection
+  后经 `wiki_ingest` 纳入知识体系。
+  - **可信度评分分层策略**：
+    - POC：Python stdlib 启发式（domain 域名分级 + recency 时效衰减 +
+      corroboration 关键词重叠），权重 0.40 / 0.25 / 0.35，零额外依赖；
+      工具名：`credibility_score`（`method: "heuristic"`）
+    - MVP：LLM 裁判（`method: "judge"`）— 小型语言模型对候选来源作主观评估，
+      使用 OpenAI/Anthropic API，可选依赖
+    - Prod：引用图 PageRank（`method: "pr"`）— 从文档参考文献中抽取引用关系，
+      构建图并计算权威度
 
 ### 5.1.3 Wiki 构建
 - 自动生成概念页
@@ -291,13 +306,55 @@ MinerU 文档探索器已经具备高精度文档解析、检索、深读、MCP 
 ## 9. 关键工作流
 
 ### 9.1 Wiki 先行工作流
-1. 用户输入主题
-2. 系统采集高质量资料
-3. 抽取核心概念和证据
-4. 编译为 Wiki
-5. 运行 Wiki lint
-6. 生成 Wiki index
-7. 基于 Wiki 生成研报
+
+Wiki 先行工作流已从静态的线性步骤升级为 **Agentic 交错循环**，由
+`run.sh build-wiki` 驱动多轮 Claude Code 会话完成：
+
+1. **初始化**：解析 `--topic` YAML，验证 qmd 环境，确定预算参数
+   （`--max-search`、`--max-writes`、`--wall-clock`）
+2. **种子引导（SEED_BOOTSTRAP）**：调用 `setup.sh` 抓取 papers / blogs / repos
+   种子语料并建立 qmd 索引；初始化 `sources/web/` collection
+3. **Agent 交错循环（每轮独立 CC 会话）**：
+   1. 从 `wiki_log` 重新推导已用预算计数（`web_search` 调用次数 /
+      `doc_write` 调用次数 / 挂钟时间），不依赖检查点缓存值
+   2. 读取上一轮 `auto_check.py` 输出的覆盖率快照（`coverage_snapshot`），
+      找出覆盖最弱的 `research_question` 或 Wiki 章节
+   3. 若本地索引内容充足（命中 ≥ 3 且证据充分），直接
+      `wiki_ingest + doc_write`，跳过 Web 搜索
+   4. 若本地内容不足，发起 Web 搜索：调用内置 `WebSearch`，将结构化结果传给
+      `web_search` MCP 工具归一化存储
+   5. 对每个候选 URL 调用 `credibility_score`；分数 < 0.3 的来源跳过，
+      ≥ 0.3 的调用 `web_fetch` 抓取正文
+   6. 将通过审核的内容通过 `wiki_ingest → doc_write` 写入 Wiki；
+      低可信度来源（0.3–0.5）在页面内标注警告
+   7. 维护链接图：更新已有 Wiki 页的 wikilink，修订与新来源存在矛盾的旧页
+   8. 每轮结束运行 `wiki_lint`，消除 broken_links 和孤立页
+   9. 检查停止条件（见下）；写入原子检查点（仅含轮次编号和预算配置）
+4. **停止条件**（满足任一即停止，并将原因写入 `stop_reason`）：
+   - **coverage_met**：`research_questions_coverage ≥ 0.70` 且 `orphan_ratio ≤ 0.15`
+   - **lint_clean**：`wiki_lint` 返回 0 broken_links 且孤立页比例低于阈值
+   - **budget_exhausted**：`web_search` 调用数、`doc_write` 调用数或挂钟时间
+     任一达到上限；达到前 20% 阈值时切换到收敛模式（停止探索新源，优先填补覆盖缺口）
+5. **收尾（FINALIZE）**：运行 `wiki_index` 生成索引页；保存最终 `wiki_log`
+6. **评估（EVALUATE）**：调用 `auto_check.py` 输出三项 Wiki 健康指标：
+   - `research_questions_coverage`：`topics/*.yml` 中各 `research_question`
+     有 Wiki 覆盖的比例（目标 ≥ 0.70）
+   - `orphan_ratio`：零入链 Wiki 页占总页数的比例（目标 ≤ 0.15）
+   - `avg_citations_per_page`：每个 Wiki 页平均引用的来源数（目标 ≥ 2.0）
+7. **研报生成**：停止条件满足后，Agent 写 `wiki/reports/wiki-first.md`；
+   后续可继续投喂 `02-DIRECT-zh.md`→`03-COMPARE-zh.md`→`04-EVALUATE-zh.md`
+   完成对比评估流程
+
+CLI 入口：
+
+```bash
+bash deepresearch/run.sh build-wiki \
+  --topic deepresearch/topics/document-parsing.yml \
+  --max-search 20 --max-writes 30 --wall-clock 10
+```
+
+详细状态机设计见 [`deepresearch/README.md`](../deepresearch/README.md) 的
+"Agentic Wiki 构建"章节。
 
 ### 9.2 对照工作流
 1. 使用同一主题直接做检索式生成

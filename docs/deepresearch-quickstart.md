@@ -86,6 +86,69 @@ bash deepresearch/run.sh check
 会调用 `auto_check.py` 给两份研报打客观分（citation_ratio / 覆盖 / 结构），
 再用 `score.py` 把 Agent 写出的两份 JSON 汇总到 `output/evaluation/summary.md`。
 
+`check` 还会输出 Wiki 三项指标：`research_questions_coverage`（覆盖率）、
+`orphan_ratio`（孤立页比例）、`avg_citations_per_page`（每页平均引用数）。
+
+---
+
+## Agentic 模式（新）
+
+适合不想手动投喂 prompt、希望 Agent 自主搜索 + 写 Wiki 的场景。
+底层依赖三个新 MCP 工具：`web_search`、`web_fetch`、`credibility_score`。
+
+### 5 步跑通 Agentic Wiki 构建
+
+**前置**：在普通 5 步的基础上额外安装：
+
+```bash
+pip install html2text      # web_fetch 抓取网页正文用
+```
+
+**第 1 步：验证执行计划**
+
+```bash
+./deepresearch/run.sh build-wiki \
+  --topic deepresearch/topics/document-parsing.yml \
+  --dry-run
+```
+
+打印计划（预算 / 轮次上限 / prompt 大小），不实际运行。全部合理后继续。
+
+**第 2 步：正式运行（modest budget）**
+
+```bash
+./deepresearch/run.sh build-wiki \
+  --topic deepresearch/topics/document-parsing.yml \
+  --max-search 20 --max-writes 30 --wall-clock 10
+```
+
+Agent 在内部循环中交替执行 `web_search → credibility_score → web_fetch →
+wiki_ingest → doc_write`，按轮次推进直到覆盖率达标或预算耗尽。
+
+**第 3 步：查看 Wiki 评分 + 研报评分**
+
+```bash
+./deepresearch/run.sh check
+```
+
+输出包含 `research_questions_coverage`、`orphan_ratio`、`avg_citations_per_page`
+三项 Wiki 指标，以及原有的研报评分。
+
+**第 4 步：与静态模式对比（可选）**
+
+```bash
+bash deepresearch/eval/compare_static_vs_agentic.sh \
+  --topic deepresearch/topics/document-parsing.yml
+```
+
+在同一主题上分别跑静态与 Agentic 流程，输出并排指标对比到
+`output/evaluation/comparison.md`。
+
+**第 5 步：继续投喂研报/对比/评分 prompt（可选）**
+
+Agentic 构建只完成 Wiki 部分（等同 Phase 1）。如需完整评估，
+继续按普通模式第 5 步投喂 `02-DIRECT-zh.md`、`03-COMPARE-zh.md`、`04-EVALUATE-zh.md`。
+
 ## 失败排查
 
 | 症状 | 原因 | 处理 |
@@ -96,6 +159,8 @@ bash deepresearch/run.sh check
 | `MinerU API 失败` | key 错 | `unset MINERU_API_KEY`，回落 PyMuPDF |
 | 端口冲突 | 8181 被占 | `bash run.sh serve --port 8282` |
 | Agent 写不到 wiki collection | 路径错 | 在 `01-WIKI-FIRST-zh.md` 中已说明：写到 `wiki` collection 即可，不要写绝对路径 |
+| `build-wiki` 以 `budget_exhausted` 过早停止 | 预算上限太低 | 提高 `--max-search`、`--max-writes` 或 `--wall-clock`，或加 `--resume` 从上次断点继续 |
+| `web_fetch` 返回 `word_count < 100` | 页面被反爬或需登录 | 正常现象，Agent 会自动跳过；调整 `credibility_score` 门槛或换 URL |
 
 ## 切换到自己的主题
 
