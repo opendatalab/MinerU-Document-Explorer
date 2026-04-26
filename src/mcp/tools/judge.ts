@@ -19,7 +19,7 @@ export const judgeClaimInputSchema = {
   source_text: z.string().min(1).max(10_000).describe("The source text (snippet or full paragraph) the claim comes from"),
   claim: z.string().min(1).max(2000).describe("The specific factual claim being judged"),
   context: z.string().max(4000).optional().describe("Optional extra context (e.g. claim's role in a wiki page, neighboring claims)"),
-  source_type: z.enum(["paper", "blog", "repo", "web", "unknown"]).default("unknown").optional(),
+  source_type: z.enum(["paper", "blog", "repo", "web", "wiki", "unknown"]).default("unknown").optional(),
   verdict: z.enum(["verified", "under_supported", "contradicted", "gaming", "unclear"]).optional().describe("Agent's verdict after reasoning; OMIT to get a prompt for how to judge"),
   reasoning: z.string().max(4000).optional().describe("Required when verdict is provided. Explains the verdict."),
   confidence: z.number().min(0).max(1).optional().describe("Required when verdict is provided. 0-1 confidence in the verdict."),

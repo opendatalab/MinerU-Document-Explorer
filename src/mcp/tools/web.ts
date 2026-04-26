@@ -431,7 +431,11 @@ Methods: \`heuristic\` (default) and \`judge\` are implemented. \`pr\` and \`hyb
         // Blend 50/50: heuristic base + judge verdict score.
         // judge_confidence is passed through into components for display but does NOT
         // modify the blend weight in v2 — confidence tuning is a v3 follow-up.
-        const blendedScore = 0.5 * hScore + 0.5 * jScore;
+        // Clamp to [0.1, 0.95] guard rails: avoid perfect 1.0 (even "verified" +
+        // heuristic=1 caps at 0.95) and hard floor 0.1 so truly adversarial sources
+        // still surface with a non-zero score for auditability.
+        const rawBlended = 0.5 * hScore + 0.5 * jScore;
+        const blendedScore = Math.max(0.1, Math.min(0.95, rawBlended));
 
         try {
           appendLog(db, {

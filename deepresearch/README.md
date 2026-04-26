@@ -134,37 +134,50 @@ bash deepresearch/eval/compare_static_vs_agentic.sh \
 
 v2 在 Agentic Wiki 构建基础上新增两项能力：
 
-1. **`judge_claim` MCP 工具**：Agent 在写页面时对每条关键结论自行调用裁判，
-   把裁判结果（`SUPPORTED / PARTIAL / REFUTED / INSUFFICIENT`）写回知识库，
-   可信度得分随之更新为 `credibility_score(method="judge")` 融合模式。
+1. **`judge_claim` MCP 工具**：Agent 在写页面时对每条关键结论自行推理判断，
+   把 verdict（`verified` / `under_supported` / `contradicted` / `gaming` / `unclear`）
+   + reasoning + confidence 写回 `wiki_log`，可信度得分随之通过
+   `credibility_score(method="judge")` 融合模式参与计算。
 2. **进步 Dashboard**：每次 `build-wiki` 结束后自动追加一条 JSONL 记录到
-   `output/evaluation/dashboard.jsonl`，记录三条新指标趋势，供跨轮次对比。
+   `output/evaluation/metrics-history.jsonl`，记录三条新指标趋势，供跨轮次对比。
 
-### `judge_claim` 使用模式
+### `judge_claim` 使用模式（write-back）
 
 Agent 在交错循环中对每条待写结论执行：
 
 ```
-wiki_ingest → 草稿 → judge_claim(claim, evidence_ids) → 收到 VERDICT
-→ 若 SUPPORTED/PARTIAL：写入页面，标注 [judge: ✓]
-→ 若 REFUTED：丢弃或标注 [judge: ✗]，寻找替代证据
-→ 若 INSUFFICIENT：降低引用权重，标注数据不足
+wiki_ingest → 草稿 → agent 自推理 verdict+reasoning+confidence
+           → judge_claim(source_text, claim, verdict, reasoning, confidence)
+           → 若 verified / under_supported：写入页面，标注 [judge: <verdict>, confidence: X]
+           → 若 contradicted：丢弃或标注 [judge: contradicted]，寻找替代证据
+           → 若 gaming：视为强负面信号（作者故意误导），credibility 重评
+           → 若 unclear：降低引用权重，标注数据不足
 ```
+
+tool 本身 **不调用 LLM**——Agent 在自己的推理上下文里得出 verdict，然后把结果
+传给 tool 落盘（CC passthrough 架构）。若 verdict 缺失，tool 返回
+`JUDGE_INPUT_REQUIRED` 作为 hint 让 Agent 先推理再重试。
 
 `credibility_score(method="judge")` 融合公式：
 
 ```
-final_score = 0.5 × heuristic_score + 0.5 × verdict_score
+final_score = clamp(0.1, 0.95, 0.5 × heuristic_score + 0.5 × verdict_score)
 ```
 
-其中 `verdict_score` 由以下映射表给出：
+其中 `verdict_score` 由以下映射表给出（plan Section 3）：
 
-| VERDICT | verdict_score |
-|---|---:|
-| SUPPORTED | 1.0 |
-| PARTIAL | 0.6 |
-| INSUFFICIENT | 0.4 |
-| REFUTED | 0.0 |
+| verdict | verdict_score | 含义 |
+|---|---:|---|
+| `verified` | 0.95 | 来源明确支撑该 claim |
+| `under_supported` | 0.40 | 来源仅部分/间接支持 |
+| `unclear` | 0.50 | 中性：信息不足以裁决 |
+| `contradicted` | 0.10 | 来源与 claim 矛盾 |
+| `gaming` | 0.05 | 作者故意误导（benchmark gaming / cherry-picking）——比 contradicted 还低 |
+
+> `judge_verified_ratio` 反映的是 Agent 判别时刻的**自评**，不是独立验证——
+> 应视作 verification quality 的**下界**（lower bound），不是绝对真理。自评受
+> 源里可能的 prompt injection、agent 判断偏差等因素影响。跨轮趋势比单轮绝对值
+> 更有意义。
 
 ### Dashboard 使用命令
 
@@ -179,12 +192,19 @@ bash deepresearch/run.sh dashboard --topic document-parsing --last 5
 
 ### Dashboard Metric 定义
 
-| 指标 | 含义 | 目标 |
-|---|---|---:|
-| `coverage_density` | 已覆盖 research_question 数 / 总问题数 | ≥ 0.70 |
-| `freshness` | 来源中位数发布日期距今的新鲜度（0–1，指数衰减） | ≥ 0.60 |
-| `judge_verified_ratio` | Agent 调用 `judge_claim` 核验且 SUPPORTED/PARTIAL 的结论占全部结论的比例 | ≥ 0.50 |
-| `judge_verified_count` | SUPPORTED + PARTIAL 裁决的原始计数 | — |
+| 指标 | 含义 | 方向 |
+|---|---|---|
+| `coverage_density` | research_questions 命中率（已覆盖问题/总问题） | ↑ 高更好 |
+| `orphan_ratio` | 孤立 wiki 页占比 | ↓ 低更好 |
+| `avg_citations_per_page` | 每页平均引用数 | ↑ 高更好 |
+| `freshness` | 被引源 `published_date` 的中位数（ISO 日期；<3 个有日期的源时返 null） | ↑ 新更好（但见注意事项） |
+| `judge_verified_ratio` | `wiki_log` 中按 claim 去重后 `verdict=verified` 占比 | ↑ 高更好（但是自评，见上） |
+| `judge_unique_claims` | 去重后 judge 过的独立 claim 数 | — |
+| `judge_call_count` | judge 调用原始计数（含重判） | — |
+
+> ⚠️ **Freshness 不是优化目标，而是信号**：不要为了拉高 median date 而放弃
+> seminal 老论文（LayoutLMv1, DocLayNet, DocBank 等）。v2 prompt 已内置这条守
+> 护，agent 应始终把经典奠基 paper 纳入 Wiki，与最新前沿并列评述。
 | `judge_total_count` | `judge_claim` 调用总次数 | — |
 
 ### Self-assessment caveat（自评下界说明）

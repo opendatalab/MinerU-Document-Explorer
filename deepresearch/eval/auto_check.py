@@ -310,7 +310,7 @@ def _extract_outbound_links(rel_path: str, body: str) -> set[str]:
     Extract all outbound link targets from a wiki page body.
     Returns a set of normalised relative paths (forward slash, no fragment).
     """
-    targets: set[str] = []
+    targets: list[str] = []
     page_dir = rel_path.rsplit("/", 1)[0] if "/" in rel_path else ""
     for m in WIKI_LINK_RE.finditer(body):
         wikilink = m.group(1)  # [[target]]
@@ -520,6 +520,8 @@ def score_wiki_freshness(pages: list[tuple[str, str]]) -> dict:
     undated_count = max(0, total_urls - dated_count)
 
     if dated_count < 3:
+        # Stricter than plan's "<2" — a median of 2 dates is just the average
+        # of 2 points, statistically weak. Require ≥3 for a meaningful median.
         return {
             "freshness": None,
             "freshness_source_count": dated_count,

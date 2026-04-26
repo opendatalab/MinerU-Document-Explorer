@@ -525,13 +525,15 @@ _bw_evaluate() {
     --report "$report_arg" \
     --wiki-dir "$wiki_dir" \
     --topic "$topic" \
+    --index-path "$index_path" \
     --json \
     > "$eval_json_path" 2>/dev/null || true
 
   python3 deepresearch/eval/auto_check.py \
     --report "$report_arg" \
     --wiki-dir "$wiki_dir" \
-    --topic "$topic" 2>/dev/null || true
+    --topic "$topic" \
+    --index-path "$index_path" 2>/dev/null || true
 
   if [ -n "${stub}" ] && [ -f "${stub}" ]; then
     rm -f "$stub"
@@ -750,22 +752,30 @@ cmd_build_wiki() {
 
   if [ "$bw_resume" = true ] && [ -f "$bw_checkpoint_path" ]; then
     echo "==> [init] Resuming from checkpoint: $bw_checkpoint_path"
-    bw_started_at=$(python3 -c "
+    # Pass checkpoint path as sys.argv, single-quoted heredoc, so path contents
+    # never get shell-interpolated into the Python source (defense-in-depth).
+    bw_started_at=$(python3 - "$bw_checkpoint_path" 2>/dev/null <<'RESUME_PY'
 import json, sys
 try:
-    d=json.load(open('${bw_checkpoint_path}'))
-    print(d.get('started_at',''))
-except Exception as e:
-    print('', end='')
-" 2>/dev/null || echo "")
-    bw_start_round=$(python3 -c "
+    with open(sys.argv[1], encoding="utf-8") as f:
+        d = json.load(f)
+    print(d.get("started_at", ""))
+except Exception:
+    print("", end="")
+RESUME_PY
+)
+    bw_started_at="${bw_started_at:-}"
+    bw_start_round=$(python3 - "$bw_checkpoint_path" 2>/dev/null <<'RESUME_ROUND_PY'
 import json, sys
 try:
-    d=json.load(open('${bw_checkpoint_path}'))
-    print(d.get('round',1)+1)
+    with open(sys.argv[1], encoding="utf-8") as f:
+        d = json.load(f)
+    print(d.get("round", 1) + 1)
 except Exception:
     print(1)
-" 2>/dev/null || echo 1)
+RESUME_ROUND_PY
+)
+    bw_start_round="${bw_start_round:-1}"
     if [ -z "$bw_started_at" ]; then
       echo "  WARNING: Could not parse checkpoint; starting fresh." >&2
       bw_resume=false
@@ -790,7 +800,20 @@ except Exception:
       seed_docs=$(find "deepresearch/sources" -maxdepth 3 -type f 2>/dev/null | wc -l | tr -d ' ')
     fi
     local checkpoint_exists="no"
-    [ -f "$bw_checkpoint_path" ] && checkpoint_exists="yes (round=$(python3 -c "import json; d=json.load(open('$bw_checkpoint_path')); print(d.get('round','?'))" 2>/dev/null || echo '?'))"
+    if [ -f "$bw_checkpoint_path" ]; then
+      local _round_val
+      _round_val=$(python3 - "$bw_checkpoint_path" 2>/dev/null <<'DRY_CP_PY'
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        d = json.load(f)
+    print(d.get("round", "?"))
+except Exception:
+    print("?")
+DRY_CP_PY
+)
+      checkpoint_exists="yes (round=${_round_val:-?})"
+    fi
 
     echo "==> [dry-run] Planned execution:"
     echo "    1. seed_bootstrap: setup.sh --topic $bw_topic --skip-embed"
