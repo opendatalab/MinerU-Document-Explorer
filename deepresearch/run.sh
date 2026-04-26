@@ -22,6 +22,7 @@
 #   bash deepresearch/run.sh build-wiki  --topic <yml> [--max-search N] [--max-writes N]
 #                                        [--wall-clock MIN] [--index-name NAME]
 #                                        [--dry-run] [--resume]
+#   bash deepresearch/run.sh dashboard   [--history PATH] [--json] [--last N] [--topic SLUG]
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -495,44 +496,166 @@ _bw_finalize() {
 }
 
 # ---------------------------------------------------------------------------
-# _bw_evaluate: Run auto_check.py full evaluation.
+# _bw_evaluate: Run auto_check.py full evaluation, then append to dashboard.
+# Args: $1=topic_path $2=wiki_dir $3=index_path $4=stop_reason
 # ---------------------------------------------------------------------------
 _bw_evaluate() {
   local topic="$1"
   local wiki_dir="$2"
+  local index_path="${3:-}"
+  local stop_reason="${4:-}"
 
   echo "==> [evaluate] Running auto_check.py wiki evaluation..."
   mkdir -p "deepresearch/output/evaluation"
 
   local report_arg=""
   local wiki_report="deepresearch/output/reports/wiki-first.md"
+  local stub=""
   if [ -f "$wiki_report" ]; then
     report_arg="$wiki_report"
   else
-    local stub
     stub=$(mktemp /tmp/dr2_stub_XXXXXX.md)
     printf "# stub\n" > "$stub"
     report_arg="$stub"
   fi
+
+  local eval_json_path="deepresearch/output/evaluation/build-wiki-run.json"
 
   python3 deepresearch/eval/auto_check.py \
     --report "$report_arg" \
     --wiki-dir "$wiki_dir" \
     --topic "$topic" \
     --json \
-    > "deepresearch/output/evaluation/build-wiki-run.json" 2>/dev/null || true
+    > "$eval_json_path" 2>/dev/null || true
 
   python3 deepresearch/eval/auto_check.py \
     --report "$report_arg" \
     --wiki-dir "$wiki_dir" \
     --topic "$topic" 2>/dev/null || true
 
-  if [ -n "${stub:-}" ] && [ -f "${stub:-}" ]; then
+  if [ -n "${stub}" ] && [ -f "${stub}" ]; then
     rm -f "$stub"
   fi
 
   echo ""
-  echo "  (评估 JSON: deepresearch/output/evaluation/build-wiki-run.json)"
+  echo "  (评估 JSON: $eval_json_path)"
+
+  # Append to dashboard history (fail-soft: errors here do not abort evaluate)
+  if [ -f "$eval_json_path" ]; then
+    _bw_dashboard_append "$eval_json_path" "$stop_reason" || true
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# _bw_dashboard_append: Append one row to metrics-history.jsonl via dashboard.py
+# Args: $1=eval_json_path $2=stop_reason
+# ---------------------------------------------------------------------------
+_bw_dashboard_append() {
+  local eval_json_path="$1"
+  local stop_reason="${2:-}"
+  local topic_path="${3:-$TOPIC}"
+  local history_path="deepresearch/output/evaluation/metrics-history.jsonl"
+
+  if [ ! -f "deepresearch/eval/dashboard.py" ]; then
+    echo "  (dashboard.py not found, skipping history append)" >&2
+    return 0
+  fi
+
+  mkdir -p "deepresearch/output/evaluation"
+
+  # Extract metrics from auto_check --json output, then invoke dashboard.py
+  # --append with the individual-flag contract (per T7 argparse).
+  local metrics_json
+  metrics_json=$(python3 - "$eval_json_path" "$stop_reason" <<'PY'
+import json, sys, datetime
+ac_path, stop_reason = sys.argv[1], sys.argv[2] or "unknown"
+try:
+    with open(ac_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+except Exception as exc:
+    print(f"ERR:{exc}", file=sys.stderr)
+    sys.exit(1)
+w = data.get("wiki", {}) or {}
+run_id = "bw-" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+out = {
+    "run_id": run_id,
+    "coverage": w.get("research_questions_coverage", 0.0),
+    "orphan": w.get("orphan_ratio", 1.0),
+    "citations": w.get("avg_citations_per_page", 0.0),
+    "freshness": w.get("freshness") or "null",
+    "freshness_count": w.get("freshness_source_count", 0),
+    "judge_verified_ratio": ("null" if w.get("judge_verified_ratio") is None
+                             else w.get("judge_verified_ratio")),
+    "judge_unique_claims": w.get("judge_unique_claims", 0),
+    "judge_call_count": w.get("judge_call_count", 0),
+    "stop_reason": stop_reason,
+}
+print(json.dumps(out))
+PY
+  ) || { echo "  WARNING: metrics extraction failed; skipping dashboard append" >&2; return 0; }
+
+  local topic_slug
+  topic_slug=$(basename "$topic_path" .yml)
+
+  # Extract each field via python (avoids jq dependency)
+  local run_id coverage orphan citations freshness freshness_count jvr juc jcc
+  run_id=$(echo "$metrics_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["run_id"])')
+  coverage=$(echo "$metrics_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["coverage"])')
+  orphan=$(echo "$metrics_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["orphan"])')
+  citations=$(echo "$metrics_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["citations"])')
+  freshness=$(echo "$metrics_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["freshness"])')
+  freshness_count=$(echo "$metrics_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["freshness_count"])')
+  jvr=$(echo "$metrics_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["judge_verified_ratio"])')
+  juc=$(echo "$metrics_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["judge_unique_claims"])')
+  jcc=$(echo "$metrics_json" | python3 -c 'import json,sys;print(json.load(sys.stdin)["judge_call_count"])')
+
+  python3 deepresearch/eval/dashboard.py \
+    --append \
+    --history-path "$history_path" \
+    --topic "$topic_slug" \
+    --run-id "$run_id" \
+    --coverage "$coverage" \
+    --orphan "$orphan" \
+    --citations "$citations" \
+    --freshness "$freshness" \
+    --freshness-count "$freshness_count" \
+    --judge-verified-ratio "$jvr" \
+    --judge-unique-claims "$juc" \
+    --judge-call-count "$jcc" \
+    --stop-reason "$stop_reason" \
+    || echo "  WARNING: dashboard --append failed (non-fatal)" >&2
+}
+
+# ---------------------------------------------------------------------------
+# cmd_dashboard: Display evaluation history dashboard.
+# ---------------------------------------------------------------------------
+cmd_dashboard() {
+  local history_path="deepresearch/output/evaluation/metrics-history.jsonl"
+  local extra_args=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --history) history_path="$2"; shift 2 ;;
+      --help|-h)
+        echo "Usage: bash deepresearch/run.sh dashboard [OPTIONS]"
+        echo ""
+        echo "Options:"
+        echo "  --history PATH    Path to metrics-history.jsonl (default: $history_path)"
+        echo "  --json            Output as JSON array instead of Markdown"
+        echo "  --last N          Show only last N runs"
+        echo "  --topic SLUG      Filter by topic slug"
+        exit 0
+        ;;
+      *) extra_args+=("$1"); shift ;;
+    esac
+  done
+
+  if [ ! -f "deepresearch/eval/dashboard.py" ]; then
+    echo "ERROR: deepresearch/eval/dashboard.py not found." >&2
+    exit 1
+  fi
+
+  python3 deepresearch/eval/dashboard.py --history-path "$history_path" "${extra_args[@]+"${extra_args[@]}"}"
 }
 
 # ---------------------------------------------------------------------------
@@ -815,7 +938,7 @@ except Exception:
   echo ""
 
   # ── EVALUATE ──────────────────────────────────────────────────────────────
-  _bw_evaluate "$bw_topic" "$bw_wiki_dir"
+  _bw_evaluate "$bw_topic" "$bw_wiki_dir" "$bw_index_path" "$bw_stop_reason"
 }
 
 case "$CMD" in
@@ -825,6 +948,7 @@ case "$CMD" in
   doctor) cmd_doctor ;;
   clean) cmd_clean "$@" ;;
   build-wiki) cmd_build_wiki "$@" ;;
+  dashboard) cmd_dashboard "$@" ;;
   help|-h|--help|"") usage ;;
   *) echo "未知命令: $CMD"; usage; exit 1 ;;
 esac

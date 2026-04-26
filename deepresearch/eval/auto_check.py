@@ -29,8 +29,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sqlite3
 import statistics
 import sys
+from datetime import date
 from pathlib import Path
 
 try:
@@ -403,6 +405,230 @@ def score_wiki_citations(pages: list[tuple[str, str]]) -> dict:
     return {"avg_citations_per_page": avg}
 
 
+# ---------------------------------------------------------------------------
+# Freshness helpers
+# ---------------------------------------------------------------------------
+
+# Matches (source: URL, date: YYYY-MM-DD) inline annotations
+_INLINE_DATE_RE = re.compile(
+    r"\(source:\s*([^,)]+),\s*date:\s*(\d{4}-\d{2}-\d{2})\)",
+    re.IGNORECASE,
+)
+# Matches arxiv URLs: arxiv.org/abs/YYMM.NNNNN or arxiv.org/pdf/YYMM.NNNNN
+_ARXIV_RE = re.compile(
+    r"arxiv\.org/(?:abs|pdf)/(\d{4})\.\d+",
+    re.IGNORECASE,
+)
+# Matches frontmatter published_date or date fields (YYYY-MM-DD)
+_FRONTMATTER_DATE_RE = re.compile(
+    r"^(?:published_date|date):\s*(\d{4}-\d{2}-\d{2})\s*$",
+    re.MULTILINE,
+)
+
+
+def _arxiv_url_to_date(url: str) -> "date | None":
+    """
+    Convert an arxiv URL's YYMM code to an approximate date.
+    e.g. arxiv.org/abs/2308.13418 -> date(2023, 8, 1)
+    YYMM where YY >= 91 is treated as 19xx, else 20xx.
+    Returns None if URL doesn't match arxiv pattern.
+    """
+    m = _ARXIV_RE.search(url)
+    if not m:
+        return None
+    yymm = m.group(1)  # e.g. "2308"
+    try:
+        yy = int(yymm[:2])
+        mm = int(yymm[2:])
+        if mm < 1 or mm > 12:
+            return None
+        year = (1900 + yy) if yy >= 91 else (2000 + yy)
+        return date(year, mm, 1)
+    except (ValueError, IndexError):
+        return None
+
+
+def _extract_cited_dates(wiki_pages: list[tuple[str, str]]) -> list[date]:
+    """
+    Scan all wiki pages for cited sources with extractable published dates.
+
+    Sources:
+    1. (source: URL, date: YYYY-MM-DD) inline annotations
+    2. Frontmatter 'published_date: YYYY-MM-DD' or 'date: YYYY-MM-DD'
+    3. Arxiv URL YYMM code -> approximate date
+
+    Skips sources where no date can be extracted (plan D4=A).
+    Returns list of date objects for all sources that had a parseable date.
+    """
+    extracted: list[date] = []
+
+    for _rel, body in wiki_pages:
+        # 1. inline annotations: (source: URL, date: YYYY-MM-DD)
+        for m in _INLINE_DATE_RE.finditer(body):
+            date_str = m.group(2)
+            try:
+                extracted.append(date.fromisoformat(date_str))
+            except ValueError:
+                pass
+
+        # 2. frontmatter date fields
+        for m in _FRONTMATTER_DATE_RE.finditer(body):
+            date_str = m.group(1)
+            try:
+                extracted.append(date.fromisoformat(date_str))
+            except ValueError:
+                pass
+
+        # 3. arxiv URLs (bare URLs, markdown links, inline sources)
+        for url_m in re.finditer(r"https?://\S+", body):
+            url = url_m.group(0).rstrip(".,;)")
+            d = _arxiv_url_to_date(url)
+            if d is not None:
+                extracted.append(d)
+
+    return extracted
+
+
+def _median_date(dates: list[date]) -> "date | None":
+    """Return median date from a list of dates. Returns None for empty list."""
+    if not dates:
+        return None
+    sorted_dates = sorted(dates)
+    n = len(sorted_dates)
+    mid = n // 2
+    if n % 2 == 1:
+        return sorted_dates[mid]
+    # For even count: pick lower median (avoid fractional dates)
+    return sorted_dates[mid - 1]
+
+
+def score_wiki_freshness(pages: list[tuple[str, str]]) -> dict:
+    """
+    Compute freshness: median published_date of cited sources with extractable dates.
+    Returns dict with freshness, freshness_source_count, freshness_undated_count,
+    and freshness_note if insufficient dated sources.
+    """
+    # Count total source URLs to compute undated count
+    total_urls = 0
+    for _rel, body in pages:
+        total_urls += len(re.findall(r"https?://\S+", body))
+        total_urls += len(_INLINE_DATE_RE.findall(body))
+
+    dated = _extract_cited_dates(pages)
+    dated_count = len(dated)
+    # undated = total URL occurrences minus dated (rough estimate)
+    undated_count = max(0, total_urls - dated_count)
+
+    if dated_count < 3:
+        return {
+            "freshness": None,
+            "freshness_source_count": dated_count,
+            "freshness_undated_count": undated_count,
+            "freshness_note": "insufficient dated sources (<3)",
+        }
+
+    median = _median_date(dated)
+    return {
+        "freshness": median.isoformat() if median else None,
+        "freshness_source_count": dated_count,
+        "freshness_undated_count": undated_count,
+        "freshness_note": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Judge stats helpers
+# ---------------------------------------------------------------------------
+
+_JUDGE_DEDUP_SQL = """
+WITH latest_verdicts AS (
+  SELECT
+    json_extract(details,'$.claim')     AS claim,
+    json_extract(details,'$.verdict')   AS verdict,
+    MAX(timestamp)                      AS latest
+  FROM wiki_log
+  WHERE operation='judge_claim'
+  GROUP BY json_extract(details,'$.claim')
+)
+SELECT
+  COUNT(*)                                            AS judge_unique_claims,
+  SUM(CASE WHEN verdict='verified' THEN 1 ELSE 0 END) AS verified
+FROM latest_verdicts;
+"""
+
+_JUDGE_RAW_SQL = "SELECT COUNT(*) FROM wiki_log WHERE operation='judge_claim';"
+
+
+def _query_judge_stats(index_path: str) -> dict:
+    """
+    Query qmd SQLite index for judge_claim statistics.
+
+    Returns dict with:
+      judge_verified_ratio: float | None
+      judge_unique_claims: int
+      judge_call_count: int
+      judge_note: str | None  (set if table missing or error)
+
+    Uses stdlib sqlite3 only. Handles missing file, missing table, and JSON
+    errors defensively — always returns partial results rather than raising.
+    """
+    null_result: dict = {
+        "judge_verified_ratio": None,
+        "judge_unique_claims": None,
+        "judge_call_count": None,
+        "judge_note": None,
+    }
+
+    path = Path(index_path)
+    if not path.exists():
+        null_result["judge_note"] = f"index file not found: {index_path}"
+        return null_result
+
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.OperationalError as exc:
+        null_result["judge_note"] = f"sqlite3 open error: {exc}"
+        return null_result
+
+    try:
+        # Check table exists
+        cur = con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='wiki_log';"
+        )
+        if cur.fetchone() is None:
+            null_result["judge_note"] = "wiki_log table not found in index"
+            return null_result
+
+        # Raw call count
+        raw_row = con.execute(_JUDGE_RAW_SQL).fetchone()
+        judge_call_count: int = raw_row[0] if raw_row else 0
+
+        # Deduped stats
+        dedup_row = con.execute(_JUDGE_DEDUP_SQL).fetchone()
+        if dedup_row is None:
+            judge_unique_claims = 0
+            verified = 0
+        else:
+            judge_unique_claims = dedup_row[0] or 0
+            verified = dedup_row[1] or 0
+
+        judge_verified_ratio: "float | None" = None
+        if judge_unique_claims > 0:
+            judge_verified_ratio = round(verified / judge_unique_claims, 4)
+
+        return {
+            "judge_verified_ratio": judge_verified_ratio,
+            "judge_unique_claims": judge_unique_claims,
+            "judge_call_count": judge_call_count,
+            "judge_note": None,
+        }
+    except sqlite3.Error as exc:
+        null_result["judge_note"] = f"sqlite3 query error: {exc}"
+        return null_result
+    finally:
+        con.close()
+
+
 def score_wiki(
     wiki_dir: Path,
     topic_cfg: dict | None,
@@ -410,10 +636,14 @@ def score_wiki(
     threshold_coverage: float = 0.70,
     threshold_orphan: float = 0.15,
     threshold_citations: float = 2.0,
+    index_path: "str | None" = None,
 ) -> dict:
     """
     Orchestrator: compute all wiki-level scoring dimensions.
     Returns a dict ready to embed under the 'wiki' key in the output JSON.
+
+    index_path: optional path to qmd SQLite index for judge_claim stats.
+                If None or file missing, judge_* fields are null.
     """
     try:
         if not wiki_dir.exists():
@@ -449,7 +679,21 @@ def score_wiki(
         citation_data = score_wiki_citations(pages)
         result.update(citation_data)
 
-        # overall_pass
+        # 4. freshness (always computed when wiki_dir present)
+        freshness_data = score_wiki_freshness(pages)
+        result.update(freshness_data)
+
+        # 5. judge stats (opt-in via index_path)
+        if index_path is not None:
+            judge_data = _query_judge_stats(index_path)
+            result.update(judge_data)
+        else:
+            result["judge_verified_ratio"] = None
+            result["judge_unique_claims"] = None
+            result["judge_call_count"] = None
+            result["judge_note"] = None
+
+        # overall_pass (freshness and judge are trend signals, not gates)
         coverage = result.get("research_questions_coverage")
         orphan = result.get("orphan_ratio", 1.0)
         avg_cite = result.get("avg_citations_per_page", 0.0)
@@ -504,6 +748,22 @@ def render_human(data: dict) -> str:
             lines.append(f"- research_questions_coverage: {w.get('research_questions_coverage')}")
             lines.append(f"- orphan_ratio: {w.get('orphan_ratio')} (orphans: {w.get('orphan_pages', [])})")
             lines.append(f"- avg_citations_per_page: {w.get('avg_citations_per_page')}")
+            freshness = w.get("freshness")
+            fsrc = w.get("freshness_source_count")
+            fnote = w.get("freshness_note")
+            lines.append(
+                f"- freshness: {freshness} (dated sources: {fsrc})"
+                + (f" [{fnote}]" if fnote else "")
+            )
+            jvr = w.get("judge_verified_ratio")
+            juc = w.get("judge_unique_claims")
+            jcc = w.get("judge_call_count")
+            jnote = w.get("judge_note")
+            lines.append(
+                f"- judge_verified_ratio: {jvr} "
+                f"(unique_claims: {juc}, call_count: {jcc})"
+                + (f" [{jnote}]" if jnote else "")
+            )
             lines.append(f"- overall_pass: {w.get('overall_pass')}")
     return "\n".join(lines)
 
@@ -523,6 +783,12 @@ def main() -> None:
         dest="wiki_dir",
         default=None,
         help="Wiki 集合目录路径（提供后启用 Wiki 评分）",
+    )
+    ap.add_argument(
+        "--index-path",
+        dest="index_path",
+        default=None,
+        help="qmd SQLite 索引路径，用于 judge_claim 统计（默认: ~/.cache/qmd/deepresearch.sqlite）",
     )
     ap.add_argument("--json", action="store_true", help="以 JSON 格式输出")
     # Configurable thresholds (override Section 6 POC defaults)
@@ -567,12 +833,20 @@ def main() -> None:
                 "警告: --wiki-dir 已指定但 topic YAML 未加载，wiki 覆盖率检测将跳过 research_questions",
                 file=sys.stderr,
             )
+        # Resolve index_path: explicit flag, else default location
+        index_path: "str | None" = args.index_path
+        if index_path is None:
+            default_idx = Path.home() / ".cache" / "qmd" / "deepresearch.sqlite"
+            if default_idx.exists():
+                index_path = str(default_idx)
+            # else leave as None; judge metrics will be null with no warning
         data["wiki"] = score_wiki(
             Path(args.wiki_dir),
             topic_cfg,
             threshold_coverage=args.threshold_coverage,
             threshold_orphan=args.threshold_orphan,
             threshold_citations=args.threshold_citations,
+            index_path=index_path,
         )
 
     if args.json:

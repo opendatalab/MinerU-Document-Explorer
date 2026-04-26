@@ -51,7 +51,8 @@
 |---|---|---|
 | `web_search` | `web_search(query, results?, top_k?, provider?)` | 归一化并存储搜索结果。**使用方式**：先调用 CC 原生 `WebSearch` 获取结果，再把结构化 results 传入此工具。若不传 `results`，工具会返回 `isError: true` 并提示你先调用 `WebSearch`。 |
 | `web_fetch` | `web_fetch(url, timeout_sec?, max_bytes?)` | 抓取单个 URL，返回 `{markdown, title, meta, extracted_links}`。`word_count < 100` 时跳过（页面被阻止或为空）。 |
-| `credibility_score` | `credibility_score(url, snippet?, source_type?, published_date?, known_snippets?)` | 对一个来源打可信度分（0–1）。分数规则见下方"可信度门控"。 |
+| `credibility_score` | `credibility_score(url, snippet?, source_type?, published_date?, known_snippets?, method?, judge_verdict?, judge_confidence?)` | 对一个来源打可信度分（0–1）。`method="judge"` 时把本轮 `judge_claim` 得到的 `judge_verdict`/`judge_confidence` 传入，即可得到 heuristic+judge 的融合分。分数规则见下方"可信度门控"。 |
+| `judge_claim` | `judge_claim(source_text, claim, verdict, reasoning, confidence, source_type?)` | 对单条**非平凡**事实声明做 verdict 落盘。`verdict` ∈ `{verified, under_supported, contradicted, gaming, unclear}`，`confidence` ∈ [0, 1]。结果写入 wiki_log，供 dashboard 统计与 auto_check 引用。 |
 
 ### 现有 Wiki / 文档工具
 
@@ -103,6 +104,17 @@
      b. score < 0.3：跳过
      c. score ≥ 0.3：调用 web_fetch 抓取内容
      d. word_count < 100：跳过
+
+  4.5 对 credibility ≥ 0.5 的候选源，先用 `web_fetch` 拿到其摘要/片段，针对其中每条**非平凡**事实声明
+     （numerical claim / comparison claim / benchmark result / method attribution 等）：
+     a. Agent 自己在本轮推理中判断 verdict ∈ {verified, under_supported, contradicted, gaming, unclear}，
+        以及 reasoning + confidence
+     b. 调用 `judge_claim(source_text, claim, verdict, reasoning, confidence)` 落盘
+     c. 不要对"常识性"/"背景介绍"/"作者自述"做 judge（会刷掉比率）
+     d. 如果某源 ≥2 条 claim 被 judge 为 contradicted 或 gaming，
+        考虑将其 credibility 重评为 <0.3 并不纳入 wiki
+     e. 重评时调用 `credibility_score(url, ..., method="judge", judge_verdict=<最严重verdict>,
+        judge_confidence=<对应confidence>)`，即可得到 heuristic+judge 的融合分
 
   5. 摄取并写入 Wiki：
      a. web_fetch 返回后，用 web_search(store_to="sources/web/...") 或直接
@@ -262,6 +274,19 @@ type: paper|blog|repo|concept|web
 
 ---
 
+## ⚠️ Freshness 不是目标，是 dashboard 信号
+
+**Freshness is a dashboard signal, not an optimization target.**
+在写 Wiki 时：
+- **一定保留** seminal / highly-cited 的早期论文（e.g., LayoutLMv1, DocBank, DocLayNet, DeepDoc）
+- **不要**为了拉高 median_date 而弃掉里程碑工作
+- Freshness 指标告诉我们"有没有追踪到最新进展"，不告诉我们"用新的就是好的"
+- 如果某经典工作（> 3 年）仍是当前领域的事实标杆，它必须在 Wiki 中，与新工作并列评述
+
+相当于：Wiki 要像一本教科书——**既有经典奠基，也有最新前沿**。只追新会让 Wiki 变成新闻简报。
+
+---
+
 ## 质量自检清单（提交前）
 
 - [ ] 至少 10 个 `concepts/*.md`，每个都有 ≥3 条 evidence（含来源 URL 或 wikilink）。
@@ -273,5 +298,8 @@ type: paper|blog|repo|concept|web
 - [ ] 研报 `reports/wiki-first.md` 中每段尾巴都有 `[[...]]` 引用。
 - [ ] 研报有"我们不敢下的结论"小节（防 hallucination）。
 - [ ] 每轮至少运行一次 `wiki_lint`，不把断链遗留到下一轮。
+- [ ] 对 `judge_claim` 返回 `under_supported` / `contradicted` / `unclear` 的 claim，在 Wiki 页里**显式标注**限制，格式：
+  > [judge: under_supported, confidence: 0.4] 虽然 X 声称 Y，但 Y 缺乏独立来源支持，此处记录为待验证。
+  这样读者（和未来评测）能区分"已验证"和"待定"论断。
 
 完成上述清单后，进入 `02-DIRECT-zh.md`。
