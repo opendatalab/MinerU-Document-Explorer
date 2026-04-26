@@ -30,6 +30,7 @@ import {
   registerWritingTools,
   registerWikiTools,
   registerWebTools,
+  registerJudgeTools,
 } from "./tools/index.js";
 
 // =============================================================================
@@ -78,6 +79,11 @@ async function createMcpServer(store: QMDStore): Promise<McpServer> {
   // Register web tools (web_search, web_fetch, credibility_score)
   // ---------------------------------------------------------------------------
   registerWebTools(server, store);
+
+  // ---------------------------------------------------------------------------
+  // Register judge tools (judge_claim — LLM-judge write-back)
+  // ---------------------------------------------------------------------------
+  registerJudgeTools(server, store);
 
   return server;
 }

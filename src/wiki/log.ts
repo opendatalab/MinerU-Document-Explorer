@@ -18,7 +18,8 @@ export type WikiOperation =
   | "query"
   | "index"
   | "web_search"
-  | "web_fetch";
+  | "web_fetch"
+  | "judge_claim";
 
 export interface WikiLogEntry {
   id?: number;

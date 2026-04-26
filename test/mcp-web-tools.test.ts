@@ -299,7 +299,7 @@ describe("credibility_score handler", () => {
     expect(body.components).toBeTruthy();
   });
 
-  test("with method: judge returns isError and not yet implemented message", async () => {
+  test("with method: judge and no judge_verdict returns isError JUDGE_INPUT_REQUIRED", async () => {
     const response = await credibilityScore({
       url: "https://example.com",
       method: "judge",
@@ -308,10 +308,10 @@ describe("credibility_score handler", () => {
     expect(response.isError).toBe(true);
     const body = parseText(response.content[0]!.text) as {
       error: string;
-      message: string;
+      hint: string;
     };
-    expect(body.error).toBe("METHOD_NOT_IMPLEMENTED");
-    expect(body.message.toLowerCase()).toContain("not yet implemented");
+    expect(body.error).toBe("JUDGE_INPUT_REQUIRED");
+    expect(body.hint).toContain("judge_verdict");
   });
 
   test("with known_snippets provided passes --known-snippets-json arg to Python", async () => {

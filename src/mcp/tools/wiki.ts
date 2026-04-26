@@ -326,11 +326,11 @@ Returns actionable suggestions. Run periodically to keep the wiki healthy.`,
     "wiki_log",
     {
       title: "Wiki Log",
-      description: "View the wiki activity log — a chronological record of ingest, update, lint, and query operations. Useful for understanding what has been processed recently.",
+      description: "View the wiki activity log — a chronological record of ingest, update, lint, query, web_search, web_fetch, and judge_claim operations. Useful for understanding what has been processed recently.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         since: z.string().optional().describe("ISO date string — only show entries after this date (e.g. '2025-01-01')"),
-        operation: z.enum(["ingest", "update", "lint", "query", "index"]).optional().describe("Filter to a specific operation type"),
+        operation: z.enum(["ingest", "update", "lint", "query", "index", "web_search", "web_fetch", "judge_claim"]).optional().describe("Filter to a specific operation type"),
         limit: z.number().optional().default(20).describe("Max entries to return (default: 20)"),
         format: z.enum(["json", "markdown"]).optional().default("markdown").describe("Output format"),
       },

@@ -7,3 +7,4 @@ export { registerCoreTools } from "./core.js";
 export { registerWritingTools } from "./writing.js";
 export { registerWikiTools } from "./wiki.js";
 export { registerWebTools } from "./web.js";
+export { registerJudgeTools } from "./judge.js";

@@ -165,7 +165,11 @@ export const credibilityScoreInputSchema = {
   source_type: z.enum(["paper", "blog", "repo", "web", "unknown"]).default("unknown").optional().describe("Type hint for domain scoring"),
   published_date: z.string().optional().describe("ISO 8601 published date if known"),
   known_snippets: z.array(z.string()).max(50).optional().describe("Snippets from other independent sources covering the same claim (for corroboration scoring)"),
-  method: z.enum(["heuristic", "judge", "pr", "hybrid"]).default("heuristic").optional().describe("Scoring method. Only heuristic is implemented in this POC."),
+  method: z.enum(["heuristic", "judge", "pr", "hybrid"]).default("heuristic").optional().describe("Scoring method. heuristic and judge are implemented; pr and hybrid are v3 scope."),
+  judge_verdict: z.enum(["verified", "under_supported", "contradicted", "gaming", "unclear"]).optional()
+    .describe("When method=judge: the agent's already-reasoned verdict. When present, blended with heuristic scoring."),
+  judge_confidence: z.number().min(0).max(1).optional()
+    .describe("When method=judge: agent's confidence in the verdict (0-1)."),
 };
 
 export function registerWebTools(server: McpServer, store: QMDStore): void {
@@ -314,34 +318,146 @@ Only \`cc_passthrough\` provider is functional in this release; other providers 
   // Tool: credibility_score
   // ---------------------------------------------------------------------------
 
+  // verdict_to_score mapping for method="judge".
+  // gaming=0.05 is scored lower than contradicted=0.1 because gaming implies deliberate
+  // misrepresentation (benchmark gaming / cherry-picking), not merely disagreement with
+  // other sources. Confidence tuning of the blend weight is a v3 follow-up.
+  const VERDICT_TO_SCORE: Record<string, number> = {
+    verified: 0.95,
+    under_supported: 0.4,
+    contradicted: 0.1,
+    gaming: 0.05,
+    unclear: 0.5,
+  };
+
   server.registerTool(
     "credibility_score",
     {
       title: "Credibility Score",
-      description: `Heuristic credibility scoring for a URL. Returns a 0–1 score with component breakdown and human-readable reasons.
+      description: `Heuristic or judge-blended credibility scoring for a URL. Returns a 0–1 score with component breakdown and human-readable reasons.
 
 Components:
 - **domain**: trust tier of the source domain (arxiv, github, medium, etc.)
 - **recency**: how recently the content was published
 - **corroboration**: whether the claim appears in other independent sources
+- **judge** (method=judge only): agent-supplied verdict blended with the heuristic base
 
-Only the \`heuristic\` method is implemented in this POC release.`,
+Methods: \`heuristic\` (default) and \`judge\` are implemented. \`pr\` and \`hybrid\` are v3 scope.`,
       annotations: { readOnlyHint: true },
       inputSchema: credibilityScoreInputSchema,
     },
-    async ({ url, snippet, source_type, published_date, known_snippets, method }) => {
+    async ({ url, snippet, source_type, published_date, known_snippets, method, judge_verdict, judge_confidence }) => {
       const effectiveMethod = method ?? "heuristic";
 
-      if (effectiveMethod !== "heuristic") {
+      // pr and hybrid remain unimplemented (v3 scope)
+      if (effectiveMethod === "pr" || effectiveMethod === "hybrid") {
         return {
           content: [{ type: "text" as const, text: JSON.stringify({
             error: "METHOD_NOT_IMPLEMENTED",
             method: effectiveMethod,
-            message: `Method "${effectiveMethod}" is not yet implemented in this POC release. Use heuristic.`,
+            message: `Method "${effectiveMethod}" is not yet implemented. Use heuristic or judge.`,
           }) }],
           isError: true,
         };
       }
+
+      // judge method: requires judge_verdict
+      if (effectiveMethod === "judge") {
+        if (!judge_verdict) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({
+              error: "JUDGE_INPUT_REQUIRED",
+              hint: "method=judge requires judge_verdict. Call judge_claim first to reason about the source, then invoke this tool with the verdict. Or switch to method=heuristic for purely heuristic scoring.",
+            }) }],
+            isError: true,
+          };
+        }
+
+        // Run heuristic base first (same pipeline as method="heuristic")
+        const hArgs: string[] = ["--url", url];
+        if (snippet) hArgs.push("--snippet", snippet);
+        if (source_type && source_type !== "unknown") hArgs.push("--source-type", source_type);
+        if (published_date) hArgs.push("--date", published_date);
+
+        let hTmpFilePath: string | null = null;
+        if (known_snippets && known_snippets.length > 0) {
+          hTmpFilePath = join(tmpdir(), `qmd-snippets-${randomUUID()}.json`);
+          await writeFile(hTmpFilePath, JSON.stringify(known_snippets), "utf-8");
+          hArgs.push("--known-snippets-json", hTmpFilePath);
+        }
+
+        let hRaw: unknown;
+        try {
+          hRaw = await callPythonScript(
+            "credibility_heuristic.py",
+            hArgs,
+            undefined,
+            "deepresearch/scripts"
+          );
+        } catch (e: unknown) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({
+              error: "CREDIBILITY_FAILED",
+              url,
+              message: e instanceof Error ? e.message : String(e),
+            }) }],
+            isError: true,
+          };
+        } finally {
+          if (hTmpFilePath) {
+            unlink(hTmpFilePath).catch(() => { /* best-effort cleanup */ });
+          }
+        }
+
+        const hResult = hRaw as Record<string, unknown>;
+        if (hResult && typeof hResult === "object" && hResult["error"]) {
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({
+              error: "CREDIBILITY_ERROR",
+              url,
+              message: String(hResult["error"]),
+            }) }],
+            isError: true,
+          };
+        }
+
+        const hScore = typeof hResult["score"] === "number" ? hResult["score"] : 0.5;
+        const hReasons = Array.isArray(hResult["reasons"]) ? hResult["reasons"] as string[] : [];
+        const hComponents = hResult["components"] && typeof hResult["components"] === "object"
+          ? hResult["components"] as Record<string, number>
+          : {};
+
+        const jScore = VERDICT_TO_SCORE[judge_verdict] ?? 0.5;
+        // Blend 50/50: heuristic base + judge verdict score.
+        // judge_confidence is passed through into components for display but does NOT
+        // modify the blend weight in v2 — confidence tuning is a v3 follow-up.
+        const blendedScore = 0.5 * hScore + 0.5 * jScore;
+
+        try {
+          appendLog(db, {
+            operation: "update",
+            details: { action: "credibility_score", method: "judge", url, score: blendedScore },
+          });
+        } catch { /* log failure must not block result */ }
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            score: blendedScore,
+            reasons: [...hReasons, `judge verdict: ${judge_verdict} (confidence ${judge_confidence ?? "n/a"})`],
+            method: "judge",
+            components: {
+              ...hComponents,
+              judge: {
+                verdict: judge_verdict,
+                confidence: judge_confidence,
+                verdict_score: jScore,
+              },
+            },
+          }, null, 2) }],
+        };
+      }
+
+      // method="heuristic" (default path — v1 backward compatible)
 
       // Build args for credibility_heuristic.py
       const args: string[] = ["--url", url];

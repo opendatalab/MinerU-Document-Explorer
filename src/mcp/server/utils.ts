@@ -103,11 +103,12 @@ export async function buildInstructions(store: QMDStore): Promise<string> {
 
   // --- Group 4: Web Tools ---
   lines.push("");
-  lines.push("4. WEB TOOLS — search the live web and score source credibility:");
+  lines.push("4. WEB TOOLS — search the live web, score source credibility, verify claims:");
   lines.push("  - `web_search(query, results, ...)` — bridge for CC native WebSearch output. Call your built-in WebSearch first, then pass the markdown blob here for normalization into structured results. Omitting `results` returns an `isError` hint to call WebSearch first.");
   lines.push("  - `web_fetch(url, ...)` — fetch a single URL and convert to Markdown (title + meta + extracted links). Results can be written to a `web` collection for downstream `wiki_ingest`.");
-  lines.push("  - `credibility_score(url, snippet?, ...)` — heuristic credibility scoring (0–1) with domain / recency / corroboration sub-scores. Use to filter `web_fetch` candidates before ingestion.");
-  lines.push("  Workflow: web_search → credibility_score (filter) → web_fetch → wiki_ingest.");
+  lines.push("  - `credibility_score(url, snippet?, ...)` — heuristic credibility scoring (0–1) with domain / recency / corroboration sub-scores. Use to filter `web_fetch` candidates before ingestion. `method=\"judge\"` blends heuristic with an agent-supplied judge verdict.");
+  lines.push("  - `judge_claim(source_text, claim, verdict?, reasoning?, confidence?)` — write-back LLM-judge. Agent reasons about whether a claim is verified/under_supported/contradicted/gaming, then calls this tool to record the verdict. Omitting `verdict` returns a `JUDGE_INPUT_REQUIRED` hint.");
+  lines.push("  Workflow: web_search → credibility_score (filter) → web_fetch → judge_claim (verify claims before ingest) → wiki_ingest.");
 
   // --- Quick workflow ---
   lines.push("");
