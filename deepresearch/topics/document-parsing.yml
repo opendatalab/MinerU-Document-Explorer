@@ -82,6 +82,21 @@ repos:
   - repo: Filimoa/open-parse
     note: 智能 PDF 分块
 
+# Agent 运行时 web_search 的种子查询（每轮可再由 Agent 自主派生新 query）
+# 这些仅作为"起步方向"，不是硬性范围。
+web_search:
+  queries:
+    - "document parsing benchmarks survey 2025"
+    - "open source OCR layout analysis comparison"
+    - "MinerU Marker Nougat PDF to markdown comparison"
+    - "multimodal document understanding LLM"
+    - "table structure recognition state of the art"
+    - "DocLayNet DocBank PubLayNet benchmark"
+    - "scanned document parsing reading order"
+    - "RAG document chunking PDF pipeline"
+  max_per_query: 6
+  max_total: 40
+
 # 研报关注的核心问题（用于 Agent 综述章节锚点）
 research_questions:
   - 文档解析的核心子任务有哪些？（OCR / 版面 / 表格 / 公式 / 阅读顺序）

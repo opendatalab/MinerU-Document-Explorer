@@ -11,7 +11,14 @@ import type { Database } from "../db.js";
 // Types
 // =============================================================================
 
-export type WikiOperation = "ingest" | "update" | "lint" | "query" | "index";
+export type WikiOperation =
+  | "ingest"
+  | "update"
+  | "lint"
+  | "query"
+  | "index"
+  | "web_search"
+  | "web_fetch";
 
 export interface WikiLogEntry {
   id?: number;

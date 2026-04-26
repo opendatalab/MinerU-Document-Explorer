@@ -27,17 +27,21 @@ const MAX_BUFFER = 100 * 1024 * 1024; // 100 MiB
  * Call a Python script and parse the JSON output.
  * Throws if the script fails or returns invalid JSON.
  *
- * @param scriptName - Name of the Python script in backends/python/
+ * @param scriptName - Name of the Python script (resolved against basePath or the default backends/python dir)
  * @param args - Command line arguments to pass to the script
  * @param env - Additional environment variables
+ * @param basePath - Optional directory to resolve scriptName against. If absent, defaults to this module's `python/` subdir. Relative paths are resolved against cwd by the spawn runtime.
  * @returns The parsed JSON output
  */
 export function callPythonScript(
   scriptName: string,
   args: string[],
-  env?: Record<string, string>
+  env?: Record<string, string>,
+  basePath?: string
 ): Promise<unknown> {
-  const scriptPath = join(__dirname, "python", scriptName);
+  const scriptPath = basePath
+    ? join(basePath, scriptName)
+    : join(__dirname, "python", scriptName);
   return new Promise((resolve, reject) => {
     const child = spawn("python3", [scriptPath, ...args], {
       env: env ? { ...process.env, ...env } : undefined,
