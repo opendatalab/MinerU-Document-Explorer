@@ -1,0 +1,101 @@
+# DeepResearch 2.0 — 主题配置
+# 该文件描述一个研究主题的资料来源种子集，供 fetch_*.py 使用。
+# 你可以复制这份模板做新主题。
+
+topic: 文档解析领域调研
+slug: document-parsing
+description: |
+  围绕 "文档解析" 这一垂直方向调研：包括版面分析、OCR、PDF/DOCX/PPTX 结构化抽取、
+  表格/公式/图像识别、多模态文档大模型、Markdown 化与下游 RAG 应用。
+language: zh-CN
+
+# arXiv 关键词检索（粗筛后人工/Agent 过滤）
+arxiv:
+  # 每个 query 是 arXiv API 的 search_query 字段
+  queries:
+    - 'all:"document parsing"'
+    - 'all:"document layout analysis"'
+    - 'ti:OCR AND cat:cs.CV'
+    - 'all:"table structure recognition"'
+    - 'all:"document understanding" AND cat:cs.CL'
+    - 'all:"PDF extraction" AND cat:cs.CL'
+    - 'all:Nougat AND cat:cs.LG'
+    - 'all:Marker AND all:PDF'
+    - 'all:LayoutLM'
+    - 'all:DocLayNet'
+    - 'all:MinerU'
+    - 'all:"multimodal document"'
+  date_from: "2022-01-01"
+  date_to: "2026-12-31"
+  max_per_query: 8
+  max_total: 30
+
+# 高质量种子论文（即使关键词漏掉也强制纳入）
+seed_papers:
+  - arxiv_id: "2308.13418"   # Nougat: Neural Optical Understanding for Academic Documents
+  - arxiv_id: "2204.08387"   # LayoutLMv3
+  - arxiv_id: "2106.11539"   # DocFormer
+  - arxiv_id: "2211.13296"   # Pix2Struct
+  - arxiv_id: "2311.11810"   # mPLUG-DocOwl
+  - arxiv_id: "2303.07274"   # Donut: OCR-free Document Understanding
+  - arxiv_id: "2403.12895"   # MinerU
+  - arxiv_id: "2305.15393"   # DocLLM
+  - arxiv_id: "2104.08836"   # DocBank
+  - arxiv_id: "2206.01062"   # DocLayNet
+
+# 技术博客 / 长文（URL 列表，脚本会抓取并转 markdown）
+blogs:
+  - url: https://github.com/opendatalab/MinerU/blob/master/README.md
+    title: MinerU 官方 README
+  - url: https://www.unstructured.io/blog
+    title: Unstructured.io Blog（聚合页，需手工挑文章）
+    note: 聚合页，手工再补具体文章 URL
+  - url: https://huggingface.co/blog/nougat
+    title: HuggingFace · Nougat 解读
+  - url: https://blog.langchain.dev/parsing-pdfs-and-extracting-text-from-them-the-rag-stack/
+    title: LangChain Blog · Parsing PDFs for RAG
+  - url: https://www.llamaindex.ai/blog/llamaparse-pdf-parser-for-rag
+    title: LlamaParse · LlamaIndex
+  - url: https://huggingface.co/blog/smol-vision
+    title: HF · Small VLMs for documents
+
+# 开源仓库（README 抓取）
+repos:
+  - repo: opendatalab/MinerU
+    note: 端到端 PDF → Markdown
+  - repo: VikParuchuri/marker
+    note: Marker - PDF to markdown
+  - repo: Unstructured-IO/unstructured
+    note: 多格式文档解析
+  - repo: facebookresearch/nougat
+    note: 学术 PDF OCR
+  - repo: microsoft/unilm
+    note: LayoutLM 系列
+  - repo: tesseract-ocr/tesseract
+    note: 经典 OCR
+  - repo: PaddlePaddle/PaddleOCR
+    note: 中文 OCR
+  - repo: deanmalmgren/textract
+    note: Python textract
+  - repo: pymupdf/PyMuPDF
+    note: PDF 结构化抽取
+  - repo: Filimoa/open-parse
+    note: 智能 PDF 分块
+
+# 研报关注的核心问题（用于 Agent 综述章节锚点）
+research_questions:
+  - 文档解析的核心子任务有哪些？（OCR / 版面 / 表格 / 公式 / 阅读顺序）
+  - 主流端到端方案与传统多阶段流水线的取舍？
+  - 多模态大模型（DocOwl / Pix2Struct / Donut）解决了什么、未解决什么？
+  - 评测基准与数据集（DocLayNet / DocBank / FUNSD / PubLayNet）的差异？
+  - 在 RAG 链路里，文档解析对召回/生成质量影响有多大？
+  - 中文/复杂版面/扫描件的开源方案现状？
+  - 工程落地的吞吐、成本、稳定性指标？
+
+# 输出配置
+output:
+  index_name: deepresearch
+  sources_collection: sources
+  wiki_collection: wiki
+  reports_dir: deepresearch/output/reports
+  eval_dir: deepresearch/output/evaluation

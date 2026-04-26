@@ -43,3 +43,16 @@ demo/wiki/
 demo/survey.md
 # Test data
 test_raw/
+
+# DeepResearch 2.0
+deepresearch/sources/papers/*.pdf
+deepresearch/sources/papers/metadata.json
+deepresearch/sources/blogs/*.md
+deepresearch/sources/blogs/metadata.json
+deepresearch/sources/repos/*.md
+deepresearch/sources/repos/metadata.json
+deepresearch/output/wiki/
+deepresearch/output/reports/
+deepresearch/output/evaluation/
+deepresearch/scripts/__pycache__/
+deepresearch/eval/__pycache__/
