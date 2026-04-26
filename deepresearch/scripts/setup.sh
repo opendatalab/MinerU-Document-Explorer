@@ -163,6 +163,13 @@ if [ -d deepresearch/sources/repos ] && \
     "代表性开源仓库 README（含 stars / license / 备注）"
 fi
 
+# 索引 Web 搜索结果（由 Agent 通过 web_fetch 工具写入）
+mkdir -p deepresearch/sources/web
+"${QMD_CMD[@]}" --index "$INDEX_NAME" collection add deepresearch/sources/web \
+  --name web --mask '**/*.md'
+"${QMD_CMD[@]}" --index "$INDEX_NAME" context add qmd://web \
+  "Web search results (fetched and stored by agent via web_fetch)"
+
 # 创建空的 wiki collection
 mkdir -p deepresearch/output/wiki
 "${QMD_CMD[@]}" --index "$INDEX_NAME" collection add deepresearch/output/wiki \

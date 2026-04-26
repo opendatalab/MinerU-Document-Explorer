@@ -12,10 +12,16 @@ DeepResearch 2.0 — 研报自动检查
   - coverage_hits（基于 topic.yml 的 research_questions 关键词探测）
   - structure_score（粗略 0–100，仅供参考）
 
+Wiki scoring (opt-in via --wiki-dir):
+  - research_questions_coverage: fraction of research_questions covered by wiki pages
+  - orphan_ratio: fraction of wiki pages with no inbound links
+  - avg_citations_per_page: average citation count per wiki page
+
 Usage:
   python3 deepresearch/eval/auto_check.py --report deepresearch/output/reports/wiki-first.md
   python3 deepresearch/eval/auto_check.py --report ... --json
   python3 deepresearch/eval/auto_check.py --report ... --topic deepresearch/topics/document-parsing.yml --json
+  python3 deepresearch/eval/auto_check.py --report ... --wiki-dir deepresearch/output/wiki --topic ... --json
 """
 
 from __future__ import annotations
@@ -222,6 +228,253 @@ def analyze(report_path: Path, topic_cfg: dict | None) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Wiki scoring helpers
+# ---------------------------------------------------------------------------
+
+# Matches [[wikilinks]] and relative markdown links like [text](path.md)
+WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]|\[(?:[^\]]*)\]\(([^)]+\.md[^)]*)\)")
+# Matches any citation: http/https URL, [[wikilink]], (source: ...), numeric footnote,
+# "Source:" / "来源：" patterns
+CITATION_ANY_RE = re.compile(
+    r"https?://\S+"                    # bare/inline URL
+    r"|\[\[[^\]]+\]\]"                 # [[wikilink]]
+    r"|\(source:\s*[^)]+\)"            # (source: ...)
+    r"|\[?\^[A-Za-z0-9_]+\]?"         # numeric/named footnote [^1] or ^1
+    r"|\bSource[s]?:\s*\S"            # "Source: ..."
+    r"|来源[：:]\s*\S",               # "来源：..."
+    re.IGNORECASE,
+)
+
+
+def _meaningful_tokens(text: str) -> list[str]:
+    """Extract CJK phrases (>=2 chars) and Latin words (>=3 chars) from text."""
+    tokens: list[str] = []
+    for m in re.finditer(r"[一-鿿]{2,}", text):
+        tokens.append(m.group(0))
+    for m in re.finditer(r"[A-Za-z]{3,}", text):
+        tokens.append(m.group(0).lower())
+    return list(dict.fromkeys(tokens))
+
+
+def _page_matches_question(page_body: str, question: str) -> bool:
+    """
+    Return True if the page body matches the question.
+    Match conditions (OR):
+      1. Question appears as a heading (##+ ... text ...) — fuzzy: >=60% token overlap
+      2. >=40% of meaningful tokens from the question appear in the page body
+    """
+    body_lower = page_body.lower()
+    q_tokens = _meaningful_tokens(question)
+    if not q_tokens:
+        return False
+
+    # Condition 2: token overlap in full body
+    hit_count = sum(1 for t in q_tokens if t in body_lower)
+    if hit_count / len(q_tokens) >= 0.40:
+        return True
+
+    # Condition 1: question as heading (higher threshold but still fuzzy)
+    for m in HEADING_RE.finditer(page_body):
+        heading_text = m.group(2).lower()
+        h_tokens = _meaningful_tokens(heading_text)
+        if not h_tokens:
+            continue
+        overlap = sum(1 for t in q_tokens if t in heading_text)
+        if overlap / len(q_tokens) >= 0.60:
+            return True
+
+    return False
+
+
+def _collect_wiki_pages(wiki_dir: Path) -> list[tuple[str, str]]:
+    """
+    Return list of (relative_path, body) for all .md files under wiki_dir.
+    Paths are relative to wiki_dir (forward slashes).
+    """
+    pages: list[tuple[str, str]] = []
+    for p in sorted(wiki_dir.rglob("*.md")):
+        try:
+            body = p.read_text(encoding="utf-8", errors="replace")
+            rel = p.relative_to(wiki_dir).as_posix()
+            pages.append((rel, body))
+        except OSError:
+            pass
+    return pages
+
+
+def _extract_outbound_links(rel_path: str, body: str) -> set[str]:
+    """
+    Extract all outbound link targets from a wiki page body.
+    Returns a set of normalised relative paths (forward slash, no fragment).
+    """
+    targets: set[str] = []
+    page_dir = rel_path.rsplit("/", 1)[0] if "/" in rel_path else ""
+    for m in WIKI_LINK_RE.finditer(body):
+        wikilink = m.group(1)  # [[target]]
+        md_link = m.group(2)   # [text](target.md)
+        raw = wikilink or md_link
+        if not raw:
+            continue
+        # strip fragment
+        raw = raw.split("#")[0].strip()
+        if not raw:
+            continue
+        # normalise: if wikilink without extension, add .md
+        if m.group(1) and not raw.endswith(".md"):
+            raw = raw + ".md"
+        # resolve relative to page dir
+        if page_dir and not raw.startswith("/"):
+            resolved = page_dir + "/" + raw
+        else:
+            resolved = raw.lstrip("/")
+        # simple normalisation: collapse a/b/../c → a/c
+        parts = []
+        for part in resolved.split("/"):
+            if part == "..":
+                if parts:
+                    parts.pop()
+            elif part and part != ".":
+                parts.append(part)
+        targets.append("/".join(parts))
+    return set(targets)
+
+
+def _count_citations(body: str) -> int:
+    """Count citation occurrences in a page body."""
+    return len(CITATION_ANY_RE.findall(body))
+
+
+def score_wiki_questions_coverage(
+    pages: list[tuple[str, str]],
+    research_questions: list[str],
+) -> dict:
+    """Score research_questions coverage across wiki pages."""
+    matched: list[dict] = []
+    unmatched: list[str] = []
+    for q in research_questions:
+        hitting_pages = [
+            rel for rel, body in pages if _page_matches_question(body, q)
+        ]
+        if hitting_pages:
+            matched.append({"q": q, "pages": hitting_pages})
+        else:
+            unmatched.append(q)
+    total = len(research_questions)
+    coverage = round(len(matched) / total, 4) if total else 0.0
+    return {
+        "research_questions_coverage": coverage,
+        "matched_questions": matched,
+        "unmatched_questions": unmatched,
+    }
+
+
+def score_wiki_orphan_ratio(pages: list[tuple[str, str]]) -> dict:
+    """Compute orphan ratio: pages that no other page links to."""
+    if not pages:
+        return {"orphan_ratio": 0.0, "orphan_pages": [], "total_pages": 0}
+
+    page_paths = {rel for rel, _ in pages}
+
+    # Build set of all pages that are referenced at least once
+    referenced: set[str] = set()
+    for rel, body in pages:
+        for target in _extract_outbound_links(rel, body):
+            referenced.add(target)
+
+    orphan_pages = sorted(
+        rel for rel in page_paths
+        if rel not in referenced
+    )
+    ratio = round(len(orphan_pages) / len(pages), 4)
+    return {
+        "orphan_ratio": ratio,
+        "orphan_pages": orphan_pages,
+        "total_pages": len(pages),
+    }
+
+
+def score_wiki_citations(pages: list[tuple[str, str]]) -> dict:
+    """Compute average citations per wiki page."""
+    if not pages:
+        return {"avg_citations_per_page": 0.0}
+    counts = [_count_citations(body) for _, body in pages]
+    avg = round(sum(counts) / len(counts), 4)
+    return {"avg_citations_per_page": avg}
+
+
+def score_wiki(
+    wiki_dir: Path,
+    topic_cfg: dict | None,
+    *,
+    threshold_coverage: float = 0.70,
+    threshold_orphan: float = 0.15,
+    threshold_citations: float = 2.0,
+) -> dict:
+    """
+    Orchestrator: compute all wiki-level scoring dimensions.
+    Returns a dict ready to embed under the 'wiki' key in the output JSON.
+    """
+    try:
+        if not wiki_dir.exists():
+            return {"error": f"wiki_dir not found: {wiki_dir}"}
+        if not wiki_dir.is_dir():
+            return {"error": f"wiki_dir is not a directory: {wiki_dir}"}
+
+        pages = _collect_wiki_pages(wiki_dir)
+        if not pages:
+            return {
+                "error": "no .md files found in wiki_dir",
+                "total_pages": 0,
+            }
+
+        result: dict = {}
+
+        # 1. research_questions_coverage
+        research_questions: list[str] = []
+        if topic_cfg:
+            research_questions = topic_cfg.get("research_questions") or []
+        if research_questions:
+            result.update(score_wiki_questions_coverage(pages, research_questions))
+        else:
+            result["research_questions_coverage"] = None
+            result["matched_questions"] = []
+            result["unmatched_questions"] = []
+
+        # 2. orphan_ratio
+        orphan_data = score_wiki_orphan_ratio(pages)
+        result.update(orphan_data)
+
+        # 3. avg_citations_per_page
+        citation_data = score_wiki_citations(pages)
+        result.update(citation_data)
+
+        # overall_pass
+        coverage = result.get("research_questions_coverage")
+        orphan = result.get("orphan_ratio", 1.0)
+        avg_cite = result.get("avg_citations_per_page", 0.0)
+        if coverage is None:
+            overall_pass = None  # cannot determine without questions
+        else:
+            overall_pass = (
+                coverage >= threshold_coverage
+                and orphan <= threshold_orphan
+                and avg_cite >= threshold_citations
+            )
+        result["overall_pass"] = overall_pass
+        result["thresholds"] = {
+            "coverage_min": threshold_coverage,
+            "orphan_max": threshold_orphan,
+            "citations_min": threshold_citations,
+        }
+        return result
+
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+
 def render_human(data: dict) -> str:
     lines = []
     lines.append(f"# auto_check: {data['report']}")
@@ -240,14 +493,60 @@ def render_human(data: dict) -> str:
     lines.append(f"- 覆盖: {cov['hits']}/{cov['total']} research_questions")
     lines.append(f"- structure_score: {data['structure_score']} / 100")
     lines.append(f"- has_intro={data['has_intro']} has_conclusion={data['has_conclusion']}")
+    if "wiki" in data:
+        w = data["wiki"]
+        lines.append("")
+        lines.append("## Wiki scoring")
+        if "error" in w:
+            lines.append(f"- ERROR: {w['error']}")
+        else:
+            lines.append(f"- total_pages: {w.get('total_pages', '?')}")
+            lines.append(f"- research_questions_coverage: {w.get('research_questions_coverage')}")
+            lines.append(f"- orphan_ratio: {w.get('orphan_ratio')} (orphans: {w.get('orphan_pages', [])})")
+            lines.append(f"- avg_citations_per_page: {w.get('avg_citations_per_page')}")
+            lines.append(f"- overall_pass: {w.get('overall_pass')}")
     return "\n".join(lines)
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--report", required=True)
-    ap.add_argument("--topic", default="deepresearch/topics/document-parsing.yml")
-    ap.add_argument("--json", action="store_true")
+    ap = argparse.ArgumentParser(
+        description="DeepResearch 2.0 — 研报自动检查（可选 Wiki 评分）"
+    )
+    ap.add_argument("--report", required=True, help="研报 markdown 路径")
+    ap.add_argument(
+        "--topic",
+        default="deepresearch/topics/document-parsing.yml",
+        help="主题 YAML 路径（用于 research_questions coverage 检测）",
+    )
+    ap.add_argument(
+        "--wiki-dir",
+        dest="wiki_dir",
+        default=None,
+        help="Wiki 集合目录路径（提供后启用 Wiki 评分）",
+    )
+    ap.add_argument("--json", action="store_true", help="以 JSON 格式输出")
+    # Configurable thresholds (override Section 6 POC defaults)
+    ap.add_argument(
+        "--threshold-coverage",
+        dest="threshold_coverage",
+        type=float,
+        default=0.70,
+        help="research_questions_coverage 最低阈值 (default: 0.70)",
+    )
+    ap.add_argument(
+        "--threshold-orphan",
+        dest="threshold_orphan",
+        type=float,
+        default=0.15,
+        help="orphan_ratio 最大阈值 (default: 0.15)",
+    )
+    ap.add_argument(
+        "--threshold-citations",
+        dest="threshold_citations",
+        type=float,
+        default=2.0,
+        help="avg_citations_per_page 最低阈值 (default: 2.0)",
+    )
     args = ap.parse_args()
 
     report_path = Path(args.report)
@@ -260,6 +559,22 @@ def main() -> None:
         print("提示: 未读取到 topic 配置（pyyaml 缺失或路径错），coverage 检查会返回 0/0", file=sys.stderr)
 
     data = analyze(report_path, topic_cfg)
+
+    # Wiki scoring (opt-in)
+    if args.wiki_dir is not None:
+        if topic_cfg is None:
+            print(
+                "警告: --wiki-dir 已指定但 topic YAML 未加载，wiki 覆盖率检测将跳过 research_questions",
+                file=sys.stderr,
+            )
+        data["wiki"] = score_wiki(
+            Path(args.wiki_dir),
+            topic_cfg,
+            threshold_coverage=args.threshold_coverage,
+            threshold_orphan=args.threshold_orphan,
+            threshold_citations=args.threshold_citations,
+        )
+
     if args.json:
         print(json.dumps(data, ensure_ascii=False, indent=2))
     else:

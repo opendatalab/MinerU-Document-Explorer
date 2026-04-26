@@ -18,6 +18,7 @@ texts/
 !skills/**/*.md
 !finetune/*.md
 !docs/**/*.md
+!deepresearch/**/*.md
 !demo/README.md
 !demo/AGENT-PROMPT.md
 !demo/README-zh.md

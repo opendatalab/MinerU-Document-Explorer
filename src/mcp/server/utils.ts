@@ -101,6 +101,14 @@ export async function buildInstructions(store: QMDStore): Promise<string> {
     lines.push("  Workflow: wiki_ingest → doc_read (key sections) → doc_write (with source) → wiki_lint.");
   }
 
+  // --- Group 4: Web Tools ---
+  lines.push("");
+  lines.push("4. WEB TOOLS — search the live web and score source credibility:");
+  lines.push("  - `web_search(query, results, ...)` — bridge for CC native WebSearch output. Call your built-in WebSearch first, then pass the markdown blob here for normalization into structured results. Omitting `results` returns an `isError` hint to call WebSearch first.");
+  lines.push("  - `web_fetch(url, ...)` — fetch a single URL and convert to Markdown (title + meta + extracted links). Results can be written to a `web` collection for downstream `wiki_ingest`.");
+  lines.push("  - `credibility_score(url, snippet?, ...)` — heuristic credibility scoring (0–1) with domain / recency / corroboration sub-scores. Use to filter `web_fetch` candidates before ingestion.");
+  lines.push("  Workflow: web_search → credibility_score (filter) → web_fetch → wiki_ingest.");
+
   // --- Quick workflow ---
   lines.push("");
   lines.push("Typical workflow:");

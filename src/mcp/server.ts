@@ -29,6 +29,7 @@ import {
   registerDocumentTools,
   registerWritingTools,
   registerWikiTools,
+  registerWebTools,
 } from "./tools/index.js";
 
 // =============================================================================
@@ -72,6 +73,11 @@ async function createMcpServer(store: QMDStore): Promise<McpServer> {
   // Register wiki tools (wiki_ingest, wiki_lint, wiki_log, wiki_index)
   // ---------------------------------------------------------------------------
   registerWikiTools(server, store);
+
+  // ---------------------------------------------------------------------------
+  // Register web tools (web_search, web_fetch, credibility_score)
+  // ---------------------------------------------------------------------------
+  registerWebTools(server, store);
 
   return server;
 }
