@@ -128,6 +128,75 @@ bash deepresearch/eval/compare_static_vs_agentic.sh \
 
 ---
 
+## v2 Dashboard & LLM-Judge
+
+### v2 新增能力概览
+
+v2 在 Agentic Wiki 构建基础上新增两项能力：
+
+1. **`judge_claim` MCP 工具**：Agent 在写页面时对每条关键结论自行调用裁判，
+   把裁判结果（`SUPPORTED / PARTIAL / REFUTED / INSUFFICIENT`）写回知识库，
+   可信度得分随之更新为 `credibility_score(method="judge")` 融合模式。
+2. **进步 Dashboard**：每次 `build-wiki` 结束后自动追加一条 JSONL 记录到
+   `output/evaluation/dashboard.jsonl`，记录三条新指标趋势，供跨轮次对比。
+
+### `judge_claim` 使用模式
+
+Agent 在交错循环中对每条待写结论执行：
+
+```
+wiki_ingest → 草稿 → judge_claim(claim, evidence_ids) → 收到 VERDICT
+→ 若 SUPPORTED/PARTIAL：写入页面，标注 [judge: ✓]
+→ 若 REFUTED：丢弃或标注 [judge: ✗]，寻找替代证据
+→ 若 INSUFFICIENT：降低引用权重，标注数据不足
+```
+
+`credibility_score(method="judge")` 融合公式：
+
+```
+final_score = 0.5 × heuristic_score + 0.5 × verdict_score
+```
+
+其中 `verdict_score` 由以下映射表给出：
+
+| VERDICT | verdict_score |
+|---|---:|
+| SUPPORTED | 1.0 |
+| PARTIAL | 0.6 |
+| INSUFFICIENT | 0.4 |
+| REFUTED | 0.0 |
+
+### Dashboard 使用命令
+
+```bash
+# 每次 build-wiki 结束后自动 append，无需手动触发
+# 查看全部历史趋势：
+bash deepresearch/run.sh dashboard
+
+# 仅查看指定主题最近 N 次：
+bash deepresearch/run.sh dashboard --topic document-parsing --last 5
+```
+
+### Dashboard Metric 定义
+
+| 指标 | 含义 | 目标 |
+|---|---|---:|
+| `coverage_density` | 已覆盖 research_question 数 / 总问题数 | ≥ 0.70 |
+| `freshness` | 来源中位数发布日期距今的新鲜度（0–1，指数衰减） | ≥ 0.60 |
+| `judge_verified_ratio` | Agent 调用 `judge_claim` 核验且 SUPPORTED/PARTIAL 的结论占全部结论的比例 | ≥ 0.50 |
+| `judge_verified_count` | SUPPORTED + PARTIAL 裁决的原始计数 | — |
+| `judge_total_count` | `judge_claim` 调用总次数 | — |
+
+### Self-assessment caveat（自评下界说明）
+
+`judge_verified_ratio`（JVR）是 **self-assessment lower bound**（**自评下界**）：
+裁判与被评对象同为 LLM，存在系统性乐观偏差。
+JVR 低（< 0.3）说明结论质量确实有问题；JVR 高（> 0.7）只能说明**自评**通过，
+不能替代人工审核。将 JVR 与 `avg_citations_per_page` 联合解读比单独看更可靠。
+
+`freshness` 是信号，不是目标。不应为了拉高 median_date 而放弃奠基性工作（seminal
+papers）——新鲜度指标反映来源时效，不是评价来源价值的唯一维度。
+
 ---
 
 ## 目录结构

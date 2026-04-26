@@ -129,10 +129,20 @@ MinerU 文档探索器已经具备高精度文档解析、检索、深读、MCP 
 - 自动生成对比页
 - 自动给出质量差异说明
 
-### 5.1.6 质量评估
-- 自动计算研报评分
-- 自动比较两种路径的输出
-- 给出可解释的评估结论
+### 5.1.6 Wiki 质量评分（v2 扩展）
+
+v2 在 v1 三项指标基础上新增 `freshness` 和 `judge_verified_ratio`，
+共五条 metric，由 `auto_check.py` + dashboard 联合输出：
+
+| 指标 | 来源 | 目标值 | 备注 |
+|---|---|---:|---|
+| `research_questions_coverage` | v1 | ≥ 0.70 | topics.yml 中各问题有 Wiki 覆盖的比例 |
+| `orphan_ratio` | v1 | ≤ 0.15 | 零入链 Wiki 页占总页数比例 |
+| `avg_citations_per_page` | v1 | ≥ 2.0 | 每页平均引用来源数 |
+| `freshness` | v2 | ≥ 0.60 | 来源中位数发布日期的新鲜度（指数衰减，0–1） |
+| `judge_verified_ratio` | v2 | ≥ 0.50 | judge_claim 裁决 SUPPORTED/PARTIAL 占全部裁决比例（self-assessment） |
+
+原始计数字段：`judge_verified_count`（通过裁决数）、`judge_total_count`（总裁决数）。
 
 ---
 
@@ -174,7 +184,28 @@ MinerU 文档探索器已经具备高精度文档解析、检索、深读、MCP 
 - 返工是否更少
 - 复用是否更高
 
-### 6.4 建议评分维度
+### 6.4 进步 Dashboard（v2）
+
+每次 `build-wiki` 结束后，系统自动向
+`deepresearch/output/evaluation/metrics-history.jsonl` 追加一行 JSON 记录，
+包含本轮所有五项 metric 及时间戳，供跨轮次趋势分析。
+
+**查看命令：**
+
+```bash
+bash deepresearch/run.sh dashboard                            # 所有 topic 所有 run
+bash deepresearch/run.sh dashboard --topic document-parsing --last 5
+```
+
+输出为 Markdown 表格，含 Runs 明细 + Trends 趋势（相邻两轮 Δ + 方向箭头）。
+
+**重要提醒**：`freshness` 和 `judge_verified_ratio` 只作为 dashboard 趋势信号，
+**不计入 `overall_pass`**。`overall_pass` 仅由 `coverage_density ≥ 0.70` 与
+`orphan_ratio ≤ 0.15` 决定。`judge_verified_ratio` 是 **自评下界**（self-assessment
+lower bound），反映 Agent 自判时刻的可信度，不是独立验证结果。`freshness` 是
+来源时效信号，不应为拉高 median_date 而放弃奠基性工作。
+
+### 6.5 建议评分维度
 建议采用 100 分制：
 
 | 维度 | 权重 | 说明 |
@@ -327,6 +358,11 @@ Wiki 先行工作流已从静态的线性步骤升级为 **Agentic 交错循环*
       ≥ 0.3 的调用 `web_fetch` 抓取正文
    6. 将通过审核的内容通过 `wiki_ingest → doc_write` 写入 Wiki；
       低可信度来源（0.3–0.5）在页面内标注警告
+   6.5. **（v2 judge 步骤）** 对本轮写入的每条关键结论调用 `judge_claim`：
+      传入 `source_text`、`claim`、`verdict`（`verified / under_supported /
+      contradicted / gaming / unclear`）、`reasoning`、`confidence`，
+      结果落盘到 `wiki_log`；`credibility_score(method="judge")` 融合启发式分
+      与 `judge_verdict` 输出带 `components.judge` 子对象的最终得分
    7. 维护链接图：更新已有 Wiki 页的 wikilink，修订与新来源存在矛盾的旧页
    8. 每轮结束运行 `wiki_lint`，消除 broken_links 和孤立页
    9. 检查停止条件（见下）；写入原子检查点（仅含轮次编号和预算配置）
@@ -454,3 +490,56 @@ DeepResearch 2.0 的核心不是“更会写报告”，而是：
 > **先把知识组织成专家体系，再让模型在这个体系上生成高质量研报。**
 
 这正是 MinerU 文档探索器最适合承担的基础设施角色。
+
+---
+
+## 附录 A：v2 新增能力总览
+
+### A.1 `judge_claim` MCP tool
+
+**签名（write-back 语义）：**
+
+```
+judge_claim(source_text, claim, verdict, reasoning, confidence)
+```
+
+- `verdict` 取值：`verified` / `under_supported` / `contradicted` / `gaming` / `unclear`
+- 调用结果落盘到 `wiki_log`，可通过 `wiki_log` 查询历史裁决
+- 去重策略：同一 `claim` 按 `MAX(timestamp)` 取最新 verdict（旧裁决保留但不计入汇总）
+
+### A.2 `credibility_score(method="judge")` 融合公式
+
+```
+final_score = 0.5 × heuristic_score + 0.5 × verdict_score
+```
+
+`verdict_score` 映射表（VERDICT_TO_SCORE）：
+
+| verdict | verdict_score |
+|---|---:|
+| `verified` | 0.95 |
+| `under_supported` | 0.40 |
+| `contradicted` | 0.10 |
+| `gaming` | 0.05 |
+| `unclear` | 0.50 |
+
+输出结构包含 `components.judge`（`verdict`、`confidence`、`verdict_score`）子对象，
+与 `components.domain`、`components.recency`、`components.corroboration` 并列。
+
+### A.3 Dashboard CLI（双模式）
+
+| 模式 | 命令 | 说明 |
+|---|---|---|
+| append | 自动（`build-wiki` 结束时触发） | 追加一行 JSONL 到 `metrics-history.jsonl` |
+| render | `bash deepresearch/run.sh dashboard [--topic T] [--last N]` | 读取 JSONL，输出 Markdown 趋势表 |
+
+### A.4 两条注意事项
+
+1. **Self-assessment limitation（自评下界）**：`judge_verified_ratio` 反映的是
+   Agent 在裁决时刻的**自评**，裁判与被评对象同为 LLM，存在系统性乐观偏差。
+   应视作可信度的**下界**，不能替代独立验证或人工审核。
+
+2. **Freshness-gaming safeguard（新鲜度 gaming 防护）**：`freshness` 基于来源
+   中位数发布日期的指数衰减，是时效信号而非质量目标。不应为了拉高 `freshness`
+   分值而舍弃奠基性工作（seminal papers）。该指标只进 dashboard，不影响
+   `overall_pass` 判定。

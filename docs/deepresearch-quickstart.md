@@ -149,6 +149,34 @@ bash deepresearch/eval/compare_static_vs_agentic.sh \
 Agentic 构建只完成 Wiki 部分（等同 Phase 1）。如需完整评估，
 继续按普通模式第 5 步投喂 `02-DIRECT-zh.md`、`03-COMPARE-zh.md`、`04-EVALUATE-zh.md`。
 
+**第 6 步：看进步 dashboard（v2 新增）**
+
+每次 `build-wiki` 结束后会自动追加一条记录到 `output/evaluation/dashboard.jsonl`。
+运行以下命令查看跨轮次指标趋势：
+
+```bash
+# 查看全部历史趋势
+bash deepresearch/run.sh dashboard
+
+# 仅看最近几次的指标趋势
+bash deepresearch/run.sh dashboard --last 5
+
+# 按主题过滤
+bash deepresearch/run.sh dashboard --topic document-parsing --last 5
+```
+
+三条 v2 新指标含义：
+
+| 指标 | 含义 |
+|---|---|
+| `coverage_density` | 已覆盖 research_question 比例（目标 ≥ 0.70） |
+| `freshness` | 来源新鲜度 0–1，基于来源中位数发布日期指数衰减（目标 ≥ 0.60） |
+| `judge_verified_ratio` | `judge_claim` 裁决 SUPPORTED/PARTIAL 占全部裁决比例（self-assessment lower bound） |
+
+> **注意**：v2 新增的 `freshness` 和 `judge_verified_ratio` 都只作为 dashboard
+> 指标呈现趋势，**不计入 overall_pass**。`overall_pass` 仅由
+> `coverage_density ≥ 0.70` 与 `orphan_ratio ≤ 0.15` 决定。
+
 ## 失败排查
 
 | 症状 | 原因 | 处理 |
@@ -161,6 +189,8 @@ Agentic 构建只完成 Wiki 部分（等同 Phase 1）。如需完整评估，
 | Agent 写不到 wiki collection | 路径错 | 在 `01-WIKI-FIRST-zh.md` 中已说明：写到 `wiki` collection 即可，不要写绝对路径 |
 | `build-wiki` 以 `budget_exhausted` 过早停止 | 预算上限太低 | 提高 `--max-search`、`--max-writes` 或 `--wall-clock`，或加 `--resume` 从上次断点继续 |
 | `web_fetch` 返回 `word_count < 100` | 页面被反爬或需登录 | 正常现象，Agent 会自动跳过；调整 `credibility_score` 门槛或换 URL |
+| `judge_verified_ratio 一直是 null` | Agent 没在构建过程中调用 `judge_claim` | 把 `prompts/01-WIKI-FIRST-zh.md` 读完，确保提示包含 judge step（v2 已自带） |
+| `freshness = null, note: insufficient` | 抓取源里没拿到足够日期信息 | 检查 `sources/papers/metadata.json` 是否有日期字段；arXiv 论文一般能从 URL 中抽到 YYMM |
 
 ## 切换到自己的主题
 
