@@ -347,7 +347,7 @@ Only the \`heuristic\` method is implemented in this POC release.`,
       const args: string[] = ["--url", url];
       if (snippet) args.push("--snippet", snippet);
       if (source_type && source_type !== "unknown") args.push("--source-type", source_type);
-      if (published_date) args.push("--published-date", published_date);
+      if (published_date) args.push("--date", published_date);
 
       // Write known_snippets to a temp JSON file if provided
       let tmpFilePath: string | null = null;

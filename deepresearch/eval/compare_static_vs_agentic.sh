@@ -307,7 +307,7 @@ _cmp_write_report() {
 
     ac=$(_cmp_json_wiki_field "$agentic_json" "research_questions_coverage" "0")
     ao=$(_cmp_json_wiki_field "$agentic_json" "orphan_ratio"                "1")
-    aci=$(_cmp_json_wiki_field "$agentic_json""avg_citations_per_page"      "0")
+    aci=$(_cmp_json_wiki_field "$agentic_json" "avg_citations_per_page"      "0")
     ap=$(_cmp_json_wiki_field "$agentic_json" "total_pages"                 "0")
 
     # Replace "null" with 0 / 1

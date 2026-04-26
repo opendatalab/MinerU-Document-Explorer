@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import ipaddress
 import json
 import re
+import socket
 import sys
 import urllib.parse
 import urllib.request
@@ -34,6 +36,50 @@ DEFAULT_MAX_BYTES = 5_000_000
 
 TEXT_CONTENT_TYPES = ("text/html", "text/plain")
 
+_ALLOWED_SCHEMES = frozenset({"http", "https"})
+_BLOCKED_NETWORKS = tuple(
+    ipaddress.ip_network(net)
+    for net in (
+        "127.0.0.0/8",        # loopback v4
+        "10.0.0.0/8",         # RFC1918
+        "172.16.0.0/12",      # RFC1918
+        "192.168.0.0/16",     # RFC1918
+        "169.254.0.0/16",     # link-local / cloud metadata (AWS/GCP/Azure)
+        "::1/128",            # loopback v6
+        "fc00::/7",           # unique-local v6
+        "fe80::/10",          # link-local v6
+    )
+)
+
+
+def _validate_url(url: str) -> None:
+    """Reject non-http(s) schemes and URLs resolving to internal / loopback / cloud-metadata IPs.
+
+    Defense against SSRF (e.g., ``file:///etc/passwd``, ``http://169.254.169.254``).
+    Called before any network I/O. DNS resolution failures are not blocking; urlopen
+    will surface them as its own error.
+    """
+    parsed = urllib.parse.urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        raise ValueError(f"blocked URL scheme: {scheme or '<empty>'}")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("URL has no hostname")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return
+    for info in infos:
+        addr_str = info[4][0]
+        try:
+            addr = ipaddress.ip_address(addr_str)
+        except ValueError:
+            continue
+        for net in _BLOCKED_NETWORKS:
+            if addr.version == net.version and addr in net:
+                raise ValueError(f"blocked internal/loopback address: {addr} (host={host})")
+
 
 # ---------------------------------------------------------------------------
 # HTTP helpers
@@ -44,7 +90,9 @@ def _http_get(url: str, timeout: int, max_bytes: int) -> tuple[bytes, str, str]:
 
     Raises on network errors; caller wraps in try/except.
     Enforces max_bytes via Content-Length header and mid-stream buffer check.
+    Rejects non-http(s) schemes and internal/loopback IPs (SSRF guard).
     """
+    _validate_url(url)
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         final_url: str = resp.url
@@ -148,7 +196,12 @@ def _strip_html_minimal(raw: str) -> str:
 
 
 def _html_to_markdown(html: str) -> str:
-    """Convert HTML to Markdown using html2text if available, else regex fallback."""
+    """Convert HTML to Markdown using html2text if available, else regex fallback.
+
+    HTML comments are stripped first — they're a common place to hide prompt-injection
+    payloads when this output becomes agent context.
+    """
+    html = re.sub(r"<!--[\s\S]*?-->", "", html)
     if HAS_H2T:
         h = html2text.HTML2Text()
         h.body_width = 0
@@ -165,7 +218,7 @@ def _html_to_markdown(html: str) -> str:
 
 def fetch_url(url: str, timeout: int = DEFAULT_TIMEOUT, max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, Any]:
     """Fetch a URL and return structured JSON-serialisable dict."""
-    fetched_at = datetime.datetime.utcnow().isoformat() + "Z"
+    fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
     try:
         body_bytes, final_url, content_type = _http_get(url, timeout, max_bytes)

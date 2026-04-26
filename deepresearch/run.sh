@@ -219,6 +219,15 @@ _bw_derive_counters() {
     return 0
   fi
 
+  # Validate timestamp format strictly before interpolating into SQL
+  # (defense-in-depth; started_at is produced internally but checkpoint could be tampered).
+  if ! [[ "$started_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+    echo "WARN: _bw_derive_counters: invalid started_at format, defaulting counters to 0" >&2
+    BW_SEARCH_USED=0
+    BW_WRITES_USED=0
+    return 0
+  fi
+
   BW_SEARCH_USED=$(sqlite3 "$index_path" \
     "SELECT COUNT(*) FROM wiki_log WHERE operation='web_search' AND timestamp >= '${started_at}';" \
     2>/dev/null || echo 0)
@@ -258,28 +267,32 @@ _bw_write_checkpoint() {
   local wall_clock="$7"
   local stop_reason="${8:-null}"
 
-  local stop_json
-  if [ "$stop_reason" = "null" ] || [ -z "$stop_reason" ]; then
-    stop_json="null"
-  else
-    stop_json="\"${stop_reason}\""
-  fi
-
   local tmp_path="${checkpoint_path}.tmp"
-  cat > "$tmp_path" <<CHECKPOINT_EOF
-{
-  "version": 1,
-  "topic": "${topic}",
-  "started_at": "${started_at}",
-  "round": ${round},
-  "stop_reason": ${stop_json},
-  "budget": {
-    "max_search": ${max_search},
-    "max_writes": ${max_writes},
-    "wall_clock_minutes": ${wall_clock}
-  }
+  # Use python3 json.dumps so path / reason values with quotes or unicode cannot break the JSON.
+  python3 - "$tmp_path" "$topic" "$started_at" "$round" "$stop_reason" "$max_search" "$max_writes" "$wall_clock" <<'CHECKPOINT_PY'
+import json
+import sys
+
+out_path, topic, started_at, round_s, stop_reason, ms, mw, wc = sys.argv[1:9]
+data = {
+    "version": 1,
+    "topic": topic,
+    "started_at": started_at,
+    "round": int(round_s),
+    "stop_reason": None if stop_reason in ("null", "") else stop_reason,
+    "budget": {
+        "max_search": int(ms),
+        "max_writes": int(mw),
+        "wall_clock_minutes": int(wc),
+    },
 }
-CHECKPOINT_EOF
+with open(out_path, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+CHECKPOINT_PY
+  if [ $? -ne 0 ]; then
+    echo "ERROR: _bw_write_checkpoint: python3 json.dumps failed" >&2
+    return 1
+  fi
   mv "$tmp_path" "$checkpoint_path"
 }
 
