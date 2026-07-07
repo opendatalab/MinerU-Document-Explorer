@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/opendatalab-mineru-document-explorer-badge.png)](https://mseep.ai/app/opendatalab-mineru-document-explorer)
+
 <div align="center">
 
 <h1 align="center">
